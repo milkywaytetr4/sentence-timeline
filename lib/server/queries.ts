@@ -32,6 +32,7 @@ type AttemptRow = {
   status: AttemptStatus;
   started_at: string;
   finished_at: string | null;
+  answer: string | null;
 };
 type EventRow = {
   id: string;
@@ -69,6 +70,7 @@ const toAttempt = (r: AttemptRow): Attempt => ({
   status: r.status,
   startedAt: r.started_at,
   finishedAt: r.finished_at,
+  answer: r.answer,
 });
 
 const toEvent = (r: EventRow): StoredEvent => ({
@@ -89,7 +91,7 @@ export type ProblemSummary = Problem & {
 };
 
 const ATTEMPT_WITH_EVENTS =
-  "id, problem_id, role, attempt_no, status, started_at, finished_at, events(id, seq, type, sentence_id, client_ts, voided)";
+  "id, problem_id, role, attempt_no, status, started_at, finished_at, answer, events(id, seq, type, sentence_id, client_ts, voided)";
 
 function toAttemptWithEvents(
   r: AttemptRow & { events: EventRow[] },

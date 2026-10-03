@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Select, Tabs } from "@/components/ui";
 import { formatDate } from "@/lib/domain/format";
+import { countChars } from "@/lib/domain/text";
 import {
   buildTimeline,
   formatClock,
@@ -596,7 +597,62 @@ export function CompareView({
         <p className="m-0 text-[12px] font-medium text-(--text-tertiary)">
           同じ段落の色が後ろに再び現れる箇所が戻り読み、読了線より右の色付き部分が答案作成中の見返しです。一時停止中の時間は含みません。
         </p>
+
+        <section className="flex flex-col gap-3">
+          <span className="text-[14px] font-semibold">解答</span>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {slots.map((id, si) => (
+              <AnswerCard
+                // biome-ignore lint/suspicious/noArrayIndexKey: 帯と同じく位置そのものが識別子
+                key={si}
+                attempt={id ? byId.get(id) : undefined}
+                color={slotColor(si)}
+              />
+            ))}
+          </div>
+        </section>
       </div>
     </main>
+  );
+}
+
+/** 帯と同じ順に並べ、帯の色の枠でどの版の解答かを示す */
+function AnswerCard({
+  attempt: a,
+  color,
+}: {
+  attempt: Attempt | undefined;
+  color: string;
+}) {
+  return (
+    <div
+      className="flex flex-col gap-2 rounded-(--radius-12) bg-(--surface-card) px-4 py-3.5"
+      style={{ border: `2px solid ${a ? color : "var(--ink-200)"}` }}
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span
+          className="text-[15px] font-bold"
+          style={{
+            color: a ? "var(--text-primary)" : "var(--text-tertiary)",
+          }}
+        >
+          {a ? attemptLabel(a) : "未選択"}
+        </span>
+        {a?.answer && (
+          <span className="text-[12px] font-medium text-(--text-tertiary) tabular-nums">
+            {countChars(a.answer)}字
+          </span>
+        )}
+      </div>
+      {a?.answer ? (
+        <p className="m-0 text-[16px] leading-[1.8] break-words whitespace-pre-wrap">
+          {a.answer}
+        </p>
+      ) : (
+        <p className="m-0 text-[14px] text-(--text-tertiary)">
+          {a ? "解答の記録はありません。" : ""}
+        </p>
+      )}
+    </div>
   );
 }

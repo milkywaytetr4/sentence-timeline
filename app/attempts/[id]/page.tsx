@@ -31,6 +31,7 @@ export default async function AttemptPage({
       attemptName={attemptLabel(attempt)}
       sentences={data.sentences}
       initialEvents={attempt.events}
+      initialAnswer={attempt.answer}
     />
   );
 }

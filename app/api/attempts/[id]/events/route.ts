@@ -6,7 +6,7 @@ import { db } from "@/lib/server/db";
 import { getAttemptOwner } from "@/lib/server/queries";
 
 /**
- * 端末に溜まったイベントと取り消しをまとめて受け取る。
+ * 端末に溜まったイベントと取り消し、解答をまとめて受け取る。
  * イベントの id は端末で採番しているので、同じバッチを再送しても二重登録にはならない。
  */
 export async function POST(
@@ -55,11 +55,17 @@ export async function POST(
   const voidIds = body.data.ops.flatMap((op) =>
     op.op === "void" ? [op.eventId] : [],
   );
+  // 解答完了を取り消して出し直した場合などに複数届くので、最後のものを使う
+  const answer =
+    body.data.ops
+      .flatMap((op) => (op.op === "answer" ? [op.text] : []))
+      .at(-1) ?? null;
 
   const { error } = await db().rpc("apply_events", {
     p_attempt_id: id,
     p_events: events,
     p_void_ids: voidIds,
+    p_answer: answer,
   });
   if (error) {
     console.error("apply_events failed", error);

@@ -3,6 +3,11 @@ export function countWords(text: string): number {
   return text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
 }
 
+/** 解答の字数。原稿用紙のマス目に合わせ、改行と空白は数えない */
+export function countChars(text: string): number {
+  return [...text.replace(/\s/g, "")].length;
+}
+
 /** 改行や連続する空白を1つの半角スペースにそろえる */
 export function normalizeSpaces(text: string): string {
   return text.replace(/\s+/g, " ").trim();

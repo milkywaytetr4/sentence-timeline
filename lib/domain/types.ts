@@ -51,6 +51,8 @@ export type Attempt = {
   status: AttemptStatus;
   startedAt: string;
   finishedAt: string | null;
+  /** 解答完了の前は null */
+  answer: string | null;
 };
 
 /** 大問番号「1(A)」を「第1問(A)」の形にして、年度・タイトルと並べる */

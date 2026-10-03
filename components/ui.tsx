@@ -243,8 +243,10 @@ export function ConfirmDialog({
   body,
   okLabel,
   okVariant = "primary",
+  okDisabled,
   onOk,
   onCancel,
+  children,
 }: {
   icon: LucideIcon;
   iconColor: string;
@@ -252,8 +254,11 @@ export function ConfirmDialog({
   body: string;
   okLabel: string;
   okVariant?: ButtonVariant;
+  okDisabled?: boolean;
   onOk: () => void;
   onCancel: () => void;
+  /** 本文の下に置く入力欄など */
+  children?: ReactNode;
 }) {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: 背景のタップで閉じる操作は、キャンセルボタンと Escape キーでも行える
@@ -278,6 +283,7 @@ export function ConfirmDialog({
         <div className="text-[14px] leading-[1.7] text-(--text-secondary)">
           {body}
         </div>
+        {children}
         <div className="mt-3.5 grid w-full grid-cols-2 gap-3">
           <Button variant="secondary" size="lg" fullWidth onClick={onCancel}>
             キャンセル
@@ -287,7 +293,9 @@ export function ConfirmDialog({
             size="lg"
             fullWidth
             onClick={onOk}
-            autoFocus
+            disabled={okDisabled}
+            // 入力欄があるときは、入力欄の側でフォーカスを取る
+            autoFocus={!children}
           >
             {okLabel}
           </Button>

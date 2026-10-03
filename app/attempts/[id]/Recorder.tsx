@@ -28,6 +28,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { Badge, Button, ConfirmDialog, IconButton } from "@/components/ui";
 import { loadQueue, useEventSync } from "@/lib/client/useEventSync";
+import { countChars } from "@/lib/domain/text";
 import {
   buildTimeline,
   deriveState,
@@ -41,6 +42,7 @@ import type {
   StoredEvent,
   TimelineEvent,
 } from "@/lib/domain/types";
+import { ANSWER_MAX_LENGTH } from "@/lib/domain/wire";
 
 type Mode = "waiting" | "reading" | "answer" | "review" | "paused" | "done";
 
@@ -79,6 +81,7 @@ type Props = {
   attemptName: string;
   sentences: Sentence[];
   initialEvents: StoredEvent[];
+  initialAnswer: string | null;
 };
 
 export function Recorder({
@@ -88,6 +91,7 @@ export function Recorder({
   attemptName,
   sentences,
   initialEvents,
+  initialAnswer,
 }: Props) {
   const router = useRouter();
   const showToast = useToast();
@@ -102,6 +106,8 @@ export function Recorder({
   const [confirm, setConfirm] = useState<"readDone" | "finish" | null>(null);
   const [showTimer, setShowTimer] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  /** ダイアログを閉じても、解答完了を取り消して戻っても、書きかけの解答を残す */
+  const [answer, setAnswer] = useState(initialAnswer ?? "");
   const [now, setNow] = useState(() => Date.now());
 
   // サーバーにまだ届いていない記録（前回の通信断の分）を画面の状態に反映する。
@@ -200,6 +206,7 @@ export function Recorder({
 
   const submit = async () => {
     setSubmitting(true);
+    enqueue({ op: "answer", text: answer.trim() });
     const finishEvent = record("finish");
     const result = await flush();
     if (result === "synced") {
@@ -469,18 +476,40 @@ export function Recorder({
           title={confirm === "finish" ? "解答完了にしますか" : "読了にしますか"}
           body={
             confirm === "finish"
-              ? "計測を終えて、記録を保存します。"
+              ? "計測を終えて、解答と記録を保存します。"
               : "答案作成に移ります。本文はあとから見返せます。"
           }
           okLabel={confirm === "finish" ? "解答完了にする" : "読了にする"}
           okVariant={confirm === "finish" ? "success" : "primary"}
+          okDisabled={confirm === "finish" && answer.trim() === ""}
           onCancel={() => setConfirm(null)}
           onOk={() => {
             setConfirm(null);
             if (confirm === "finish") void submit();
             else record("read_done");
           }}
-        />
+        >
+          {confirm === "finish" && (
+            <label className="mt-2 flex w-full flex-col gap-1.5 text-left">
+              <span className="flex items-baseline justify-between text-[14px] font-semibold">
+                解答
+                <span className="text-[12px] font-medium text-(--text-tertiary) tabular-nums">
+                  {countChars(answer)}字
+                </span>
+              </span>
+              <textarea
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                maxLength={ANSWER_MAX_LENGTH}
+                rows={4}
+                placeholder="紙に書いた答案を書き写してください"
+                // biome-ignore lint/a11y/noAutofocus: 解答を入力するために開くダイアログなので、すぐに書き始められるようにする
+                autoFocus
+                className="field h-auto! resize-y py-2.5! leading-[1.7]"
+              />
+            </label>
+          )}
+        </ConfirmDialog>
       )}
 
       {mode === "paused" && (

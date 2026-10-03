@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { countWords, detectSplitWarning, normalizeSpaces } from "./text";
+import {
+  countChars,
+  countWords,
+  detectSplitWarning,
+  normalizeSpaces,
+} from "./text";
+
+describe("countChars", () => {
+  it("句読点を含めて1字ずつ数える", () => {
+    expect(countChars("科学は、進歩する。")).toBe(9);
+  });
+
+  it("改行と空白は数えない", () => {
+    expect(countChars("科学は\n 進歩　する")).toBe(7);
+  });
+
+  it("サロゲートペアの文字を1字と数える", () => {
+    expect(countChars("𠮷野家")).toBe(3);
+  });
+});
 
 describe("countWords", () => {
   it("空白で区切った語を数える", () => {
