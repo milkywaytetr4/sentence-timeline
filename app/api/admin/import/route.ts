@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  detectImageType,
+  MAX_IMAGES,
+  MAX_TOTAL_IMAGE_BYTES,
+} from "@/lib/domain/image";
 import { countWords } from "@/lib/domain/text";
 import { getRole } from "@/lib/server/auth";
-import { db, PDF_BUCKET } from "@/lib/server/db";
+import { db, IMAGE_BUCKET } from "@/lib/server/db";
 import {
   canExtract,
   EXTRACT_UNAVAILABLE_MESSAGE,
   extractPassage,
+  type SourceImage,
 } from "@/lib/server/extract";
 
 // LLM による抽出は1分前後かかる
 export const maxDuration = 300;
-
-// Vercel の関数はリクエスト本文が 4.5MB までなので、それより小さく抑える
-const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
 const metaSchema = z.object({
   title: z.string().trim().min(1, "タイトルを入力してください").max(200),
@@ -21,7 +24,7 @@ const metaSchema = z.object({
   questionNo: z.string().trim().max(40),
 });
 
-/** スキャンPDFを受け取り、private バケットに保存してから本文を抽出し、問題として登録する */
+/** スクリーンショットを受け取り、private バケットに保存してから本文を抽出し、問題として登録する */
 export async function POST(request: Request) {
   const role = await getRole();
   if (role !== "teacher") {
@@ -50,32 +53,43 @@ export async function POST(request: Request) {
     );
   }
 
-  const file = form.get("pdf");
-  if (!(file instanceof File) || file.size === 0) {
+  const files = form
+    .getAll("images")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) {
     return NextResponse.json(
-      { error: "PDF を選んでください。" },
+      { error: "画像を選んでください。" },
       { status: 400 },
     );
   }
-  if (file.size > MAX_PDF_BYTES) {
+  if (files.length > MAX_IMAGES) {
     return NextResponse.json(
-      {
-        error:
-          "PDF は4MBまでにしてください。解像度を下げてスキャンし直すと小さくなります。",
-      },
+      { error: `画像は${MAX_IMAGES}枚までにしてください。` },
+      { status: 400 },
+    );
+  }
+  if (files.reduce((sum, f) => sum + f.size, 0) > MAX_TOTAL_IMAGE_BYTES) {
+    return NextResponse.json(
+      { error: "画像は合計4MBまでにしてください。" },
       { status: 413 },
     );
   }
-  const bytes = Buffer.from(await file.arrayBuffer());
-  // 拡張子や Content-Type は偽れるので、ファイル先頭のシグネチャで判定する
-  if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") {
-    return NextResponse.json(
-      { error: "PDF ファイルではありません。" },
-      { status: 400 },
-    );
+
+  const images: SourceImage[] = [];
+  for (const file of files) {
+    const bytes = Buffer.from(await file.arrayBuffer());
+    // 拡張子や Content-Type は偽れるので、ファイル先頭のシグネチャで判定する
+    const type = detectImageType(bytes);
+    if (!type) {
+      return NextResponse.json(
+        { error: `${file.name} は PNG / JPEG の画像ではありません。` },
+        { status: 400 },
+      );
+    }
+    images.push({ bytes, type });
   }
 
-  // 抽出できないと分かっている PDF を Storage に残さないよう、保存より前に確かめる
+  // 抽出できないと分かっている画像を Storage に残さないよう、保存より前に確かめる
   if (!canExtract()) {
     return NextResponse.json(
       { error: EXTRACT_UNAVAILABLE_MESSAGE },
@@ -83,21 +97,31 @@ export async function POST(request: Request) {
     );
   }
 
-  const path = `${crypto.randomUUID()}.pdf`;
-  const upload = await db()
-    .storage.from(PDF_BUCKET)
-    .upload(path, bytes, { contentType: "application/pdf" });
-  if (upload.error) {
-    console.error("pdf upload failed", upload.error);
+  // 1回の取り込み分を1つのフォルダにまとめ、画像の順番はファイル名の連番で残す
+  const folder = crypto.randomUUID();
+  const paths = images.map(
+    (image, i) => `${folder}/${i + 1}.${image.type.ext}`,
+  );
+  const uploads = await Promise.all(
+    images.map((image, i) =>
+      db()
+        .storage.from(IMAGE_BUCKET)
+        .upload(paths[i], image.bytes, { contentType: image.type.mime }),
+    ),
+  );
+  const failed = uploads.find((u) => u.error);
+  if (failed) {
+    console.error("image upload failed", failed.error);
+    await db().storage.from(IMAGE_BUCKET).remove(paths);
     return NextResponse.json(
-      { error: "PDF を保存できませんでした。" },
+      { error: "画像を保存できませんでした。" },
       { status: 500 },
     );
   }
 
   let paragraphs: string[][];
   try {
-    paragraphs = await extractPassage(bytes);
+    paragraphs = await extractPassage(images);
   } catch (e) {
     console.error("extract failed", e);
     const message =
@@ -120,7 +144,7 @@ export async function POST(request: Request) {
     p_title: meta.data.title,
     p_year: meta.data.year,
     p_question_no: meta.data.questionNo,
-    p_source_pdf_path: path,
+    p_source_path: folder,
     p_sentences: sentences,
   });
   if (error) {

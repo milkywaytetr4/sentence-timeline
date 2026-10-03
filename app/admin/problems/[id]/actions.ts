@@ -86,7 +86,7 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
     p_title: title,
     p_year: year,
     p_question_no: questionNo,
-    p_source_pdf_path: null,
+    p_source_path: null,
     p_sentences: rows,
   });
   if (error) {

@@ -14,4 +14,4 @@ export function db(): SupabaseClient {
   return client;
 }
 
-export const PDF_BUCKET = "problem-pdfs";
+export const IMAGE_BUCKET = "problem-images";

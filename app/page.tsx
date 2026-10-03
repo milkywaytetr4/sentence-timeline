@@ -64,7 +64,7 @@ export default async function HomePage() {
             {role === "teacher" && (
               <>
                 {" "}
-                <Link href="/admin/import">スキャンPDFから取り込む</Link>
+                <Link href="/admin/import">スクリーンショットから取り込む</Link>
               </>
             )}
           </div>

@@ -7,7 +7,7 @@
 
 - Next.js（App Router）+ TypeScript、Vercel に載せる前提
 - Supabase（Postgres + Storage）。ブラウザからは一切触らず、DB アクセスはサーバー側（Route Handler と Server Action）に閉じる
-- PDF からの本文抽出は Claude API（`claude-opus-5-5`）をサーバーから呼ぶ
+- スクリーンショットからの本文抽出は OpenAI API（`gpt-6-luna`）をサーバーから呼ぶ
 
 | パス | 内容 |
 | --- | --- |
@@ -15,14 +15,14 @@
 | `/` | 問題一覧、取り組み履歴、新規取り組みの開始 |
 | `/attempts/[id]` | 計測画面 |
 | `/compare` | タイムライン比較（`?problem=...&a=id1,id2` で版を指定できる） |
-| `/admin/import` | スキャンPDFの取り込み（先生のみ） |
+| `/admin/import` | スクリーンショットからの問題の取り込み（先生のみ） |
 | `/admin/problems/[id]` | 文・段落の区切りとメタ情報の編集（先生のみ） |
 
 記録は「いま見ている文」が切り替わった時点のイベント（`events` テーブル）だけを保存し、画面の状態やタイムラインは毎回イベント列から計算します（`lib/domain/timeline.ts`）。Undo は行を消さず `voided` を立てます。イベントは端末の localStorage に一時保持してまとめて送り、失敗したら再送します。
 
 ## セットアップ
 
-1. Supabase のプロジェクトを作り、`npx supabase login` → `npx supabase link --project-ref <プロジェクトの ref>` → `npx supabase db push` で `supabase/migrations` を適用する（テーブル、RLS、RPC 関数、private バケット `problem-pdfs` を作成）。以後マイグレーションを追加したときも `npx supabase db push` で適用する
+1. Supabase のプロジェクトを作り、`npx supabase login` → `npx supabase link --project-ref <プロジェクトの ref>` → `npx supabase db push` で `supabase/migrations` を適用する（テーブル、RLS、RPC 関数、private バケット `problem-images` を作成）。以後マイグレーションを追加したときも `npx supabase db push` で適用する
 2. `.env.example` を `.env.local` にコピーして値を入れる。Vercel では同じ変数を Environment Variables に登録する
 3. `npm install` → `npm run dev`
 
@@ -37,5 +37,5 @@ npm run lint       # Biome
 
 ## 制約
 
-- 取り込める PDF は4MBまで（Vercel の関数が受け取れる本文が 4.5MB までのため）
+- 取り込める画像は PNG / JPEG で10枚・合計4MBまで（Vercel の関数が受け取れる本文が 4.5MB までのため）。1MB を超える画像はブラウザ側で JPEG に変換してから送る
 - 取り組みの記録がある問題は、誤字修正とメタ情報の編集だけができる（文の結合・分割をすると過去のタイムラインが崩れるため）
