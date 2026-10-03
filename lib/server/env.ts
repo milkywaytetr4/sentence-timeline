@@ -8,7 +8,8 @@ const envSchema = z
     SESSION_SECRET: z.string().min(32),
     SUPABASE_URL: z.url(),
     SUPABASE_SECRET_KEY: z.string().min(1),
-    ANTHROPIC_API_KEY: z.string().min(1),
+    // 未設定でも PDF 取り込み以外は動くようにする
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
   })
   .refine((e) => e.TEACHER_PASSPHRASE !== e.STUDENT_PASSPHRASE, {
     message: "先生用と生徒用の合言葉は別にしてください",

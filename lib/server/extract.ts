@@ -24,6 +24,14 @@ const INSTRUCTIONS = `この PDF は東京大学の入試問題、英語 第1問
 - 行末のハイフネーションで分かれた単語は元の1語に戻してください。それ以外の綴りや語句は、誤りに見えても原文のまま写してください。
 - 各文の前後の空白は取り除き、文中の改行は半角スペース1つにしてください。`;
 
+export const EXTRACT_UNAVAILABLE_MESSAGE =
+  "ANTHROPIC_API_KEY が未設定のため、PDF から本文を抽出できません。";
+
+/** 本文抽出に必要な API キーが設定されているか */
+export function canExtract(): boolean {
+  return Boolean(serverEnv().ANTHROPIC_API_KEY);
+}
+
 /**
  * スキャンPDFから英文本文を抽出し、段落×文の配列で返す。
  * 抽出結果は必ず人が編集画面で確認する前提なので、ここでは形だけを検証する。
@@ -31,7 +39,9 @@ const INSTRUCTIONS = `この PDF は東京大学の入試問題、英語 第1問
 export async function extractPassage(
   pdf: Buffer,
 ): Promise<ExtractedParagraphs> {
-  const client = new Anthropic({ apiKey: serverEnv().ANTHROPIC_API_KEY });
+  const apiKey = serverEnv().ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error(EXTRACT_UNAVAILABLE_MESSAGE);
+  const client = new Anthropic({ apiKey });
 
   const response = await client.beta.messages.parse({
     model: "claude-opus-5-5",

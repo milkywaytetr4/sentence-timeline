@@ -3,7 +3,11 @@ import { z } from "zod";
 import { countWords } from "@/lib/domain/text";
 import { getRole } from "@/lib/server/auth";
 import { db, PDF_BUCKET } from "@/lib/server/db";
-import { extractPassage } from "@/lib/server/extract";
+import {
+  canExtract,
+  EXTRACT_UNAVAILABLE_MESSAGE,
+  extractPassage,
+} from "@/lib/server/extract";
 
 // LLM による抽出は1分前後かかる
 export const maxDuration = 300;
@@ -68,6 +72,14 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "PDF ファイルではありません。" },
       { status: 400 },
+    );
+  }
+
+  // 抽出できないと分かっている PDF を Storage に残さないよう、保存より前に確かめる
+  if (!canExtract()) {
+    return NextResponse.json(
+      { error: EXTRACT_UNAVAILABLE_MESSAGE },
+      { status: 503 },
     );
   }
 
