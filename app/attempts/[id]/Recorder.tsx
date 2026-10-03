@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowRight,
   BookCheck,
   Check,
   ChevronLeft,
@@ -105,8 +104,7 @@ export function Recorder({
   const [undoTarget, setUndoTarget] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"readDone" | "finish" | null>(null);
   const [showTimer, setShowTimer] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  /** ダイアログを閉じても、解答完了を取り消して戻っても、書きかけの解答を残す */
+  /** ダイアログを閉じても書きかけの解答を残す */
   const [answer, setAnswer] = useState(initialAnswer ?? "");
   const [now, setNow] = useState(() => Date.now());
 
@@ -155,11 +153,11 @@ export function Recorder({
               : "answer";
 
   useEffect(() => {
-    if (!showTimer && mode !== "done") return;
+    if (!showTimer) return;
     setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [showTimer, mode]);
+  }, [showTimer]);
 
   const record = (
     type: Exclude<EventType, "start">,
@@ -217,7 +215,6 @@ export function Recorder({
   };
 
   const submit = async () => {
-    setSubmitting(true);
     enqueue({ op: "answer", text: answer.trim() });
     const finishEvent = record("finish");
     const result = await flush();
@@ -266,7 +263,6 @@ export function Recorder({
   }, [sentences]);
 
   const elapsed = elapsedSeconds(events, now);
-  const total = useMemo(() => buildTimeline(events).total, [events]);
 
   const note =
     mode === "answer"
@@ -542,43 +538,6 @@ export function Recorder({
             <Button size="lg" icon={Play} onClick={() => record("resume")}>
               再開する
             </Button>
-          </div>
-        </div>
-      )}
-
-      {mode === "done" && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-(--bg-page) p-4">
-          <div className="frame flex flex-col items-center gap-3 px-8 py-10 sm:px-14">
-            <div className="text-[24px] leading-[1.4] font-bold">
-              {submitting || pendingCount > 0
-                ? "記録を送信しています"
-                : "記録を保存しました"}
-            </div>
-            <div className="text-[14px] text-(--text-secondary) tabular-nums">
-              {attemptName} · 合計 {formatClock(total)}
-            </div>
-            <div className="mt-2 flex flex-wrap justify-center gap-3">
-              {undoTarget && !submitting && (
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  icon={Undo2}
-                  onClick={undo}
-                >
-                  取り消して戻る
-                </Button>
-              )}
-              <Link
-                href={`/compare?problem=${problemId}&a=${attemptId}`}
-                className="pressable inline-flex h-[52px] items-center gap-1.5 rounded-full bg-(--accent) px-6 text-[17px] font-semibold text-white hover:bg-(--accent-hover) hover:no-underline"
-              >
-                比較画面で見る
-                <ArrowRight size={20} aria-hidden />
-              </Link>
-            </div>
-            <Link href="/" className="mt-1 text-[14px]">
-              一覧へ戻る
-            </Link>
           </div>
         </div>
       )}

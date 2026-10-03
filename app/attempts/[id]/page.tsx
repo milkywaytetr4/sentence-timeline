@@ -15,8 +15,8 @@ export default async function AttemptPage({
   const attempt = await getAttemptWithEvents(id).catch(() => null);
   if (!attempt) notFound();
 
-  // 相手の取り組みや打ち切られた取り組みは記録を続けられないので、比較画面で見せる
-  if (attempt.role !== role || attempt.status === "abandoned") {
+  // 相手の取り組みや終わった取り組みは記録を続けられないので、比較画面で見せる
+  if (attempt.role !== role || attempt.status !== "in_progress") {
     redirect(`/compare?problem=${attempt.problemId}&a=${attempt.id}`);
   }
 
