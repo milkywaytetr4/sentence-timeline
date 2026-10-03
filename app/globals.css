@@ -1,26 +1,169 @@
 @import "tailwindcss";
 
+/* Nani × Sizu Design System のトークン（Designプロジェクトの tokens/*.css から移植） */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Sky */
+  --sky-50: #f3f9fe;
+  --sky-100: #ecf6ff;
+  --sky-200: #dcf0fd;
+  --sky-300: #c6e7fb;
+  --sky-400: #8fd2fa;
+  --sky-500: #22b0f5;
+  --sky-600: #0b98ec;
+  --sky-700: #0a7fd0;
+  --sky-800: #0b5f9c;
+  /* Ink */
+  --ink-0: #ffffff;
+  --ink-50: #f6f8fa;
+  --ink-100: #eff3f6;
+  --ink-200: #e3e8ec;
+  --ink-300: #cfd6dc;
+  --ink-400: #a8b2ba;
+  --ink-500: #8a949c;
+  --ink-600: #6b757d;
+  --ink-700: #4a5258;
+  --ink-800: #2b3035;
+  --ink-900: #16191c;
+  /* Accents */
+  --violet-100: #ecedfd;
+  --violet-500: #6c74e6;
+  --amber-100: #fff3df;
+  --amber-500: #ffa31a;
+  --amber-700: #c27400;
+  --mint-100: #ddf7ec;
+  --mint-500: #17b884;
+  --mint-700: #0d8a62;
+  --rose-100: #fde7ef;
+  --rose-500: #e8508a;
+  --red-100: #fdeaea;
+  --red-500: #e5484d;
+  /* Semantic */
+  --bg-page: var(--sky-100);
+  --surface-card: var(--ink-0);
+  --surface-sunken: var(--ink-50);
+  --surface-tint: var(--sky-50);
+  --surface-chip: var(--ink-100);
+  --surface-inverse: var(--ink-900);
+  --frame-ring: var(--sky-300);
+  --border-subtle: var(--ink-200);
+  --border-strong: var(--ink-300);
+  --text-primary: var(--ink-800);
+  --text-secondary: var(--ink-600);
+  --text-tertiary: var(--ink-500);
+  --text-placeholder: var(--ink-400);
+  --text-link: var(--sky-700);
+  --accent: var(--sky-600);
+  --accent-hover: var(--sky-700);
+  --accent-soft: var(--sky-200);
+  --focus-ring: 0 0 0 3px rgba(11, 152, 236, 0.28);
+
+  /* Typography */
+  --font-stack-sans:
+    var(--font-inter), var(--font-noto-jp), system-ui, -apple-system,
+    "Hiragino Sans", sans-serif;
+  --font-stack-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --ls-display: -0.02em;
+  --text-h1: var(--fw-bold) 32px / 1.2 var(--font-stack-sans);
+  --text-h2: var(--fw-bold) 24px / 1.4 var(--font-stack-sans);
+  --text-h3: var(--fw-semibold) 18px / 1.4 var(--font-stack-sans);
+  --text-body: var(--fw-regular) 16px / 1.7 var(--font-stack-sans);
+  --text-body-sm: var(--fw-regular) 14px / 1.7 var(--font-stack-sans);
+  --text-label: var(--fw-semibold) 14px / 1.3 var(--font-stack-sans);
+  --text-caption: var(--fw-medium) 12px / 1.4 var(--font-stack-sans);
+
+  /* Radius / ring / shadow / motion */
+  --radius-6: 6px;
+  --radius-12: 12px;
+  --radius-16: 16px;
+  --radius-20: 20px;
+  --radius-frame: 28px;
+  --ring-frame: 6px;
+  --shadow-1: 0 1px 2px rgba(22, 40, 60, 0.06);
+  --shadow-2:
+    0 2px 8px rgba(22, 60, 100, 0.06), 0 1px 2px rgba(22, 60, 100, 0.04);
+  --shadow-3:
+    0 12px 32px rgba(20, 90, 150, 0.1), 0 2px 6px rgba(20, 90, 150, 0.06);
+  --shadow-float: 0 18px 48px rgba(20, 90, 150, 0.16);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  font: var(--text-body);
+  color: var(--text-primary);
+  background: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+a {
+  color: var(--text-link);
+  text-decoration: none;
+}
+
+::selection {
+  background: var(--sky-300);
+}
+
+/* 画面全体の背景（空色のドットグリッド）。色は --dot-bg / --dot-fg で切り替える */
+.dot-bg {
+  background-color: var(--dot-bg, var(--sky-100));
+  background-image: radial-gradient(
+    circle,
+    var(--dot-fg, var(--sky-400)) 1.3px,
+    transparent 1.8px
+  );
+  background-size: 36px 36px;
+  background-position: 18px 18px;
+  transition: background-color var(--dur-base);
+}
+
+/* リング付きの白いパネル（DSの Frame） */
+.frame {
+  background: var(--surface-card);
+  border-radius: var(--radius-frame);
+  border: var(--ring-frame) solid var(--frame-ring);
+  box-shadow: var(--shadow-2);
+}
+
+.field {
+  height: 44px;
+  width: 100%;
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-12);
+  padding: 0 12px;
+  font: var(--text-body);
+  color: var(--text-primary);
+  background: var(--surface-card);
+  outline: none;
+  transition:
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+
+.field:focus {
+  border-color: var(--sky-400);
+  box-shadow: var(--focus-ring);
+}
+
+.pressable:active:not(:disabled) {
+  transform: scale(0.97);
 }
