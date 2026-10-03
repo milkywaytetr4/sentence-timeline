@@ -59,6 +59,21 @@ describe("deriveState", () => {
     ).toBe(false);
   });
 
+  it("一時停止で作られた取り組みは、最初の再開までを開始待ちとする", () => {
+    expect(deriveState(log([0, "start"], [0, "pause"])).waiting).toBe(true);
+    expect(
+      deriveState(log([0, "start"], [0, "pause"], [5, "resume"])).waiting,
+    ).toBe(false);
+    expect(
+      deriveState(log([0, "start"], [0, "pause"], [5, "resume"], [6, "pause"]))
+        .waiting,
+    ).toBe(false);
+  });
+
+  it("一時停止なしで始まった取り組みは開始待ちにしない", () => {
+    expect(deriveState(log([0, "start"])).waiting).toBe(false);
+  });
+
   it("イベントの並び順ではなく seq の順に処理する", () => {
     const events = log(
       [0, "start"],
@@ -211,6 +226,13 @@ describe("elapsedSeconds", () => {
   it("一時停止中は時間が進まない", () => {
     const events = log([0, "start"], [10, "focus", "a"], [20, "pause"]);
     expect(elapsedSeconds(events, T0 + 500_000)).toBe(20);
+  });
+
+  it("開始待ちの時間は含めず、開始してからの時間を数える", () => {
+    const waiting = log([0, "start"], [0, "pause"]);
+    expect(elapsedSeconds(waiting, T0 + 60_000)).toBe(0);
+    const started = log([0, "start"], [0, "pause"], [60, "resume"]);
+    expect(elapsedSeconds(started, T0 + 70_000)).toBe(10);
   });
 });
 

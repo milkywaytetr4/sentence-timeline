@@ -41,9 +41,10 @@ import type {
   TimelineEvent,
 } from "@/lib/domain/types";
 
-type Mode = "reading" | "answer" | "review" | "paused" | "done";
+type Mode = "waiting" | "reading" | "answer" | "review" | "paused" | "done";
 
 const MODE_LABEL: Record<Mode, string> = {
+  waiting: "開始前",
   reading: "読解中",
   answer: "答案作成中",
   review: "見返し中",
@@ -52,6 +53,7 @@ const MODE_LABEL: Record<Mode, string> = {
 };
 
 const MODE_BADGE = {
+  waiting: "neutral",
   reading: "sky",
   answer: "neutral",
   review: "sky",
@@ -61,6 +63,7 @@ const MODE_BADGE = {
 
 /** 答案作成中は背景の彩度を落とし、見返し中は色を戻す（Design v3） */
 const MODE_BG: Record<Mode, [string, string]> = {
+  waiting: ["var(--ink-200)", "var(--ink-400)"],
   reading: ["var(--sky-100)", "var(--sky-400)"],
   answer: ["var(--ink-100)", "var(--ink-300)"],
   review: ["var(--sky-100)", "var(--sky-400)"],
@@ -131,13 +134,15 @@ export function Recorder({
   const mode: Mode =
     state.phase === "done"
       ? "done"
-      : state.paused
-        ? "paused"
-        : state.phase === "reading"
-          ? "reading"
-          : state.focusedId
-            ? "review"
-            : "answer";
+      : state.waiting
+        ? "waiting"
+        : state.paused
+          ? "paused"
+          : state.phase === "reading"
+            ? "reading"
+            : state.focusedId
+              ? "review"
+              : "answer";
 
   useEffect(() => {
     if (!showTimer && mode !== "done") return;
@@ -167,7 +172,7 @@ export function Recorder({
   };
 
   const undo = () => {
-    if (!undoTarget || mode === "paused") return;
+    if (!undoTarget || mode === "paused" || mode === "waiting") return;
     const target = undoTarget;
     setEvents((prev) => prev.filter((e) => e.id !== target));
     setUndoTarget(null);
@@ -175,7 +180,7 @@ export function Recorder({
   };
 
   const tapSentence = (id: string) => {
-    if (mode === "paused" || mode === "done") return;
+    if (mode === "paused" || mode === "waiting" || mode === "done") return;
     if (mode === "reading") {
       if (state.focusedId !== id) record("focus", id);
       return;
@@ -191,7 +196,8 @@ export function Recorder({
 
   const goBack = () => {
     // 一覧に戻っている間の時間を文に加算しないよう、計測中なら一時停止してから離れる
-    if (mode !== "paused" && mode !== "done") record("pause");
+    if (mode !== "paused" && mode !== "waiting" && mode !== "done")
+      record("pause");
     router.push("/");
   };
 
@@ -228,7 +234,7 @@ export function Recorder({
 
   const [bg, dot] = MODE_BG[mode];
   const ringColor =
-    mode === "answer" || mode === "paused"
+    mode === "answer" || mode === "paused" || mode === "waiting"
       ? "var(--ink-200)"
       : "var(--frame-ring)";
 
@@ -275,11 +281,11 @@ export function Recorder({
           <div
             className="flex flex-col gap-5 transition-[filter,opacity] duration-(--dur-base)"
             style={
-              mode === "paused"
+              mode === "paused" || mode === "waiting"
                 ? { filter: "blur(7px)", opacity: 0.35, pointerEvents: "none" }
                 : undefined
             }
-            aria-hidden={mode === "paused"}
+            aria-hidden={mode === "paused" || mode === "waiting"}
           >
             <p className="m-0 text-[14px] text-(--text-tertiary)">
               次の英文の要旨を、70〜80字の日本語でまとめよ。
@@ -349,7 +355,12 @@ export function Recorder({
             label="直前のタップを取り消す"
             variant="soft"
             size={56}
-            disabled={!undoTarget || mode === "paused" || mode === "done"}
+            disabled={
+              !undoTarget ||
+              mode === "paused" ||
+              mode === "waiting" ||
+              mode === "done"
+            }
             onClick={undo}
           />
           {(mode === "reading" || mode === "answer" || mode === "review") && (
@@ -372,6 +383,11 @@ export function Recorder({
           )}
         </div>
         <div className="flex justify-center">
+          {mode === "waiting" && (
+            <Button size="xl" icon={Play} onClick={() => record("resume")}>
+              開始する
+            </Button>
+          )}
           {mode === "reading" && (
             <Button
               size="xl"

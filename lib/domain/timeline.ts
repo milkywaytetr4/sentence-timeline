@@ -9,6 +9,8 @@ export type Phase = "reading" | "answer" | "done";
 
 export type RecorderState = {
   started: boolean;
+  /** 取り組みは一時停止の状態で作られるので、最初の「開始」までは true */
+  waiting: boolean;
   phase: Phase;
   /** 読解中に見ている文、または答案作成中に見返している文 */
   focusedId: string | null;
@@ -22,6 +24,7 @@ const bySeq = (a: TimelineEvent, b: TimelineEvent) => a.seq - b.seq;
 export function deriveState(events: readonly TimelineEvent[]): RecorderState {
   const s: RecorderState = {
     started: false,
+    waiting: false,
     phase: "reading",
     focusedId: null,
     paused: false,
@@ -31,6 +34,7 @@ export function deriveState(events: readonly TimelineEvent[]): RecorderState {
     switch (ev.type) {
       case "start":
         s.started = true;
+        s.waiting = true;
         break;
       case "focus":
         s.focusedId = ev.sentenceId;
@@ -56,7 +60,10 @@ export function deriveState(events: readonly TimelineEvent[]): RecorderState {
         s.paused = false;
         break;
     }
+    if (ev.type !== "start" && ev.type !== "pause") s.waiting = false;
   }
+  // 一時停止なしで始まった以前の取り組みは、開始待ちにしない
+  s.waiting &&= s.paused;
   return s;
 }
 
