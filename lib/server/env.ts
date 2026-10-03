@@ -3,8 +3,8 @@ import { z } from "zod";
 
 const envSchema = z
   .object({
-    TEACHER_PASSPHRASE: z.string().min(16, "合言葉は16文字以上にしてください"),
-    STUDENT_PASSPHRASE: z.string().min(16, "合言葉は16文字以上にしてください"),
+    TEACHER_PASSPHRASE: z.string().min(8, "合言葉は8文字以上にしてください"),
+    STUDENT_PASSPHRASE: z.string().min(8, "合言葉は8文字以上にしてください"),
     SESSION_SECRET: z.string().min(32),
     SUPABASE_URL: z.url(),
     SUPABASE_SECRET_KEY: z.string().min(1),
