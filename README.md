@@ -22,7 +22,7 @@
 
 ## セットアップ
 
-1. Supabase のプロジェクトを作り、SQL Editor で `supabase/migrations/0001_init.sql` を実行する（テーブル、RLS、RPC 関数、private バケット `problem-pdfs` を作成）
+1. Supabase のプロジェクトを作り、`npx supabase login` → `npx supabase link --project-ref <プロジェクトの ref>` → `npx supabase db push` で `supabase/migrations` を適用する（テーブル、RLS、RPC 関数、private バケット `problem-pdfs` を作成）。以後マイグレーションを追加したときも `npx supabase db push` で適用する
 2. `.env.example` を `.env.local` にコピーして値を入れる。Vercel では同じ変数を Environment Variables に登録する
 3. `npm install` → `npm run dev`
 
