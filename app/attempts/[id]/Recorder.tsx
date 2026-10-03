@@ -25,6 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useToast } from "@/components/Toast";
 import { Badge, Button, ConfirmDialog, IconButton } from "@/components/ui";
 import { loadQueue, useEventSync } from "@/lib/client/useEventSync";
 import {
@@ -89,6 +90,7 @@ export function Recorder({
   initialEvents,
 }: Props) {
   const router = useRouter();
+  const showToast = useToast();
   const { enqueue, flush, pendingCount, status } = useEventSync(attemptId);
 
   const [events, setEvents] = useState<TimelineEvent[]>(() =>
@@ -99,6 +101,7 @@ export function Recorder({
   const [undoTarget, setUndoTarget] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<"readDone" | "finish" | null>(null);
   const [showTimer, setShowTimer] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   // サーバーにまだ届いていない記録（前回の通信断の分）を画面の状態に反映する。
@@ -169,6 +172,7 @@ export function Recorder({
       op: "event",
       event: { ...ev, type, clientTs: new Date(ts).toISOString() },
     });
+    return ev;
   };
 
   const undo = () => {
@@ -192,6 +196,37 @@ export function Recorder({
 
   const tapBackground = () => {
     if (mode === "review") record("unfocus");
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    const finishEvent = record("finish");
+    const result = await flush();
+    if (result === "synced") {
+      const total = buildTimeline([...events, finishEvent]).total;
+      showToast({
+        tone: "success",
+        title: "記録を保存しました",
+        body: `${attemptName} · 合計 ${formatClock(total)}`,
+        action: {
+          href: `/compare?problem=${problemId}&a=${attemptId}`,
+          label: "比較画面で見る",
+        },
+      });
+    } else {
+      showToast({
+        tone: "error",
+        title:
+          result === "unauthorized"
+            ? "入場し直してください"
+            : "記録を保存できませんでした",
+        body:
+          result === "unauthorized"
+            ? "記録は端末に残っています。入場し直したあと一覧を開くと送信します。"
+            : "記録は端末に残っています。次に一覧を開いたときに送り直します。",
+      });
+    }
+    router.push("/");
   };
 
   const goBack = () => {
@@ -441,8 +476,9 @@ export function Recorder({
           okVariant={confirm === "finish" ? "success" : "primary"}
           onCancel={() => setConfirm(null)}
           onOk={() => {
-            record(confirm === "finish" ? "finish" : "read_done");
             setConfirm(null);
+            if (confirm === "finish") void submit();
+            else record("read_done");
           }}
         />
       )}
@@ -470,13 +506,15 @@ export function Recorder({
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-(--bg-page) p-4">
           <div className="frame flex flex-col items-center gap-3 px-8 py-10 sm:px-14">
             <div className="text-[24px] leading-[1.4] font-bold">
-              {pendingCount > 0 ? "記録を送信しています" : "記録を保存しました"}
+              {submitting || pendingCount > 0
+                ? "記録を送信しています"
+                : "記録を保存しました"}
             </div>
             <div className="text-[14px] text-(--text-secondary) tabular-nums">
               {attemptName} · 合計 {formatClock(total)}
             </div>
             <div className="mt-2 flex flex-wrap justify-center gap-3">
-              {undoTarget && (
+              {undoTarget && !submitting && (
                 <Button
                   variant="secondary"
                   size="lg"

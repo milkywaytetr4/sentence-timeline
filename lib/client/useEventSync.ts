@@ -13,6 +13,8 @@ const storageKey = (attemptId: string) => `st-queue:${attemptId}`;
 const BATCH_LIMIT = 500;
 const MIN_BACKOFF_MS = 2_000;
 const MAX_BACKOFF_MS = 60_000;
+/** 応答が返らないまま待ち続けると、提出後の画面遷移が止まってしまう */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 // localStorage が使えない環境（プライベートブラウズなど）では、タブを閉じるまでメモリに持つ
 const memoryFallback = new Map<string, QueueOp[]>();
@@ -41,57 +43,66 @@ function saveQueue(attemptId: string, ops: QueueOp[]) {
 
 export type SyncStatus = "idle" | "sending" | "retrying" | "unauthorized";
 
+/** synced: キューを送り切った / failed: 通信に失敗し、あとで再送する / unauthorized: 入場が切れている */
+export type FlushResult = "synced" | "failed" | "unauthorized";
+
 export function useEventSync(attemptId: string) {
   const [pendingCount, setPendingCount] = useState(0);
   const [status, setStatus] = useState<SyncStatus>("idle");
-  const inFlight = useRef(false);
+  const inFlight = useRef<Promise<FlushResult> | null>(null);
   const backoff = useRef(MIN_BACKOFF_MS);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flush = useCallback(
-    async (opts?: { keepalive?: boolean }): Promise<void> => {
-      if (inFlight.current) return;
-      const ops = loadQueue(attemptId);
-      setPendingCount(ops.length);
-      if (ops.length === 0) {
-        setStatus("idle");
-        return;
-      }
-      if (retryTimer.current) clearTimeout(retryTimer.current);
-      retryTimer.current = null;
+    async (opts?: { keepalive?: boolean }): Promise<FlushResult> => {
+      // 送信中なら終わるのを待ってから残りを送る。先に戻ると、呼び出し元が自分の積んだ分の結果を待てない
+      while (inFlight.current) await inFlight.current;
 
-      const batch = ops.slice(0, BATCH_LIMIT);
-      inFlight.current = true;
-      setStatus("sending");
-      let retryAfter: number | null = null;
-      try {
-        const res = await fetch(`/api/attempts/${attemptId}/events`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ops: batch }),
-          keepalive: opts?.keepalive,
-        });
-        if (res.status === 401) {
-          setStatus("unauthorized");
-          return;
+      const run = (async (): Promise<FlushResult> => {
+        for (;;) {
+          const ops = loadQueue(attemptId);
+          setPendingCount(ops.length);
+          if (ops.length === 0) {
+            setStatus("idle");
+            return "synced";
+          }
+          if (retryTimer.current) clearTimeout(retryTimer.current);
+          retryTimer.current = null;
+
+          const batch = ops.slice(0, BATCH_LIMIT);
+          setStatus("sending");
+          try {
+            const res = await fetch(`/api/attempts/${attemptId}/events`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ ops: batch }),
+              keepalive: opts?.keepalive,
+              signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            });
+            if (res.status === 401) {
+              setStatus("unauthorized");
+              return "unauthorized";
+            }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            // 送信中に追加された分は残し、次の周回で送る
+            saveQueue(attemptId, loadQueue(attemptId).slice(batch.length));
+            backoff.current = MIN_BACKOFF_MS;
+          } catch {
+            setStatus("retrying");
+            retryTimer.current = setTimeout(
+              () => void flush(),
+              backoff.current,
+            );
+            backoff.current = Math.min(backoff.current * 2, MAX_BACKOFF_MS);
+            return "failed";
+          }
         }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // 送信中に追加された分は残す
-        const rest = loadQueue(attemptId).slice(batch.length);
-        saveQueue(attemptId, rest);
-        setPendingCount(rest.length);
-        backoff.current = MIN_BACKOFF_MS;
-        setStatus("idle");
-        if (rest.length > 0) retryAfter = 0;
-      } catch {
-        setStatus("retrying");
-        retryAfter = backoff.current;
-        backoff.current = Math.min(backoff.current * 2, MAX_BACKOFF_MS);
+      })();
+      inFlight.current = run;
+      try {
+        return await run;
       } finally {
-        inFlight.current = false;
-      }
-      if (retryAfter !== null) {
-        retryTimer.current = setTimeout(() => void flush(), retryAfter);
+        if (inFlight.current === run) inFlight.current = null;
       }
     },
     [attemptId],
