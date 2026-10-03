@@ -140,12 +140,13 @@ export function Recorder({
   }, [attemptId]);
 
   const state = useMemo(() => deriveState(events), [events]);
+  // 確認ダイアログを開いている間の一時停止は、画面上は元のモードのまま見せる
   const mode: Mode =
     state.phase === "done"
       ? "done"
       : state.waiting
         ? "waiting"
-        : state.paused
+        : state.paused && !confirm
           ? "paused"
           : state.phase === "reading"
             ? "reading"
@@ -202,6 +203,17 @@ export function Recorder({
 
   const tapBackground = () => {
     if (mode === "review") record("unfocus");
+  };
+
+  // 確認ダイアログを開いている間（解答の書き写しを含む）は計測に含めない
+  const openConfirm = (kind: "readDone" | "finish") => {
+    record("pause");
+    setConfirm(kind);
+  };
+
+  const cancelConfirm = () => {
+    setConfirm(null);
+    record("resume");
   };
 
   const submit = async () => {
@@ -434,7 +446,7 @@ export function Recorder({
             <Button
               size="xl"
               icon={BookCheck}
-              onClick={() => setConfirm("readDone")}
+              onClick={() => openConfirm("readDone")}
             >
               読了
             </Button>
@@ -444,7 +456,7 @@ export function Recorder({
               size="xl"
               variant="success"
               icon={CircleCheckBig}
-              onClick={() => setConfirm("finish")}
+              onClick={() => openConfirm("finish")}
             >
               解答完了
             </Button>
@@ -482,11 +494,14 @@ export function Recorder({
           okLabel={confirm === "finish" ? "解答完了にする" : "読了にする"}
           okVariant={confirm === "finish" ? "success" : "primary"}
           okDisabled={confirm === "finish" && answer.trim() === ""}
-          onCancel={() => setConfirm(null)}
+          onCancel={cancelConfirm}
           onOk={() => {
             setConfirm(null);
             if (confirm === "finish") void submit();
-            else record("read_done");
+            else {
+              record("read_done");
+              record("resume");
+            }
           }}
         >
           {confirm === "finish" && (
