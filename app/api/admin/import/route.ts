@@ -11,6 +11,7 @@ import { db, IMAGE_BUCKET } from "@/lib/server/db";
 import {
   canExtract,
   EXTRACT_UNAVAILABLE_MESSAGE,
+  type ExtractedPassage,
   extractPassage,
   type SourceImage,
 } from "@/lib/server/extract";
@@ -119,9 +120,9 @@ export async function POST(request: Request) {
     );
   }
 
-  let paragraphs: string[][];
+  let passage: ExtractedPassage;
   try {
-    paragraphs = await extractPassage(images);
+    passage = await extractPassage(images);
   } catch (e) {
     console.error("extract failed", e);
     const message =
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  const sentences = paragraphs.flatMap((list, p) =>
+  const sentences = passage.paragraphs.flatMap((list, p) =>
     list.map((text, s) => ({
       id: null,
       paragraph_index: p,
@@ -146,6 +147,8 @@ export async function POST(request: Request) {
     p_question_no: meta.data.questionNo,
     p_source_path: folder,
     p_sentences: sentences,
+    // 読み取れなかったときは null にして、列の既定値（要約問題の文言）を入れる
+    p_instruction: passage.instruction || null,
   });
   if (error) {
     console.error("save_problem failed", error);

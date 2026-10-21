@@ -7,6 +7,7 @@ import { normalizeSpaces } from "@/lib/domain/text";
 import { serverEnv } from "./env";
 
 const extractionSchema = z.object({
+  instruction: z.string(),
   paragraphs: z.array(
     z.object({
       sentences: z.array(z.string()),
@@ -14,14 +15,26 @@ const extractionSchema = z.object({
   ),
 });
 
-export type ExtractedParagraphs = string[][];
+export type ExtractedPassage = {
+  /** 画像に設問文が写っていなければ空文字 */
+  instruction: string;
+  paragraphs: string[][];
+};
 
 export type SourceImage = { bytes: Buffer; type: ImageType };
 
 const INSTRUCTIONS = `これらの画像は東京大学の入試問題、英語 第1問(A)（要約問題）のスクリーンショットです。
-画像は本文の順に並んでいます。英文の本文だけを取り出し、段落ごと・文ごとに分けてください。
+画像は本文の順に並んでいます。日本語の設問文と英文の本文を、それぞれ取り出してください。
 
-- 日本語の設問文、問題番号、注（語注）、ページ番号、出典表記は含めないでください。
+設問文（instruction）
+- 本文の前にある、解答の仕方を指示する日本語の文（例:「次の英文の要旨を、70〜80字の日本語でまとめよ。」）を、原文のまま写してください。
+- 問題番号（「1」「(A)」など）は含めないでください。
+- 紙面の幅で折り返された改行は取り除き、続けて1行にしてください。
+- 設問文が写っていない場合は空文字にしてください。
+
+本文（paragraphs）
+- 英文の本文だけを、段落ごと・文ごとに分けてください。
+- 設問文、問題番号、注（語注）、ページ番号、出典表記は含めないでください。
 - 段落の区切りは原文の段落に合わせてください。画像をまたぐ段落は1つの段落として扱います。
 - 画像同士で同じ部分が重なって写っている場合は、重複させずに1回だけ含めてください。
 - 文の区切りは文末の終止符・疑問符・感嘆符で判断します。Mr. / Dr. / U.S. / e.g. などの略語や、小数点、引用符の内側にある句点では区切らないでください。
@@ -37,12 +50,12 @@ export function canExtract(): boolean {
 }
 
 /**
- * スクリーンショットから英文本文を抽出し、段落×文の配列で返す。
+ * スクリーンショットから設問文と英文本文を抽出する。本文は段落×文の配列で返す。
  * 抽出結果は必ず人が編集画面で確認する前提なので、ここでは形だけを検証する。
  */
 export async function extractPassage(
   images: SourceImage[],
-): Promise<ExtractedParagraphs> {
+): Promise<ExtractedPassage> {
   const apiKey = serverEnv().OPENAI_API_KEY;
   if (!apiKey) throw new Error(EXTRACT_UNAVAILABLE_MESSAGE);
   const client = new OpenAI({ apiKey });
@@ -92,5 +105,5 @@ export async function extractPassage(
   if (paragraphs.length === 0) {
     throw new Error("本文を見つけられませんでした。");
   }
-  return paragraphs;
+  return { instruction: parsed.instruction.trim(), paragraphs };
 }
