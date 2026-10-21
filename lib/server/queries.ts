@@ -15,6 +15,7 @@ type ProblemRow = {
   title: string;
   year: string;
   question_no: string;
+  instruction: string;
   created_at: string;
 };
 type SentenceRow = {
@@ -48,6 +49,7 @@ const toProblem = (r: ProblemRow): Problem => ({
   title: r.title,
   year: r.year,
   questionNo: r.question_no,
+  instruction: r.instruction,
   createdAt: r.created_at,
 });
 
@@ -109,7 +111,7 @@ export async function listProblems(): Promise<ProblemSummary[]> {
   const { data, error } = await db()
     .from("problems")
     .select(
-      `id, title, year, question_no, created_at, sentences(paragraph_index), attempts(${ATTEMPT_WITH_EVENTS})`,
+      `id, title, year, question_no, instruction, created_at, sentences(paragraph_index), attempts(${ATTEMPT_WITH_EVENTS})`,
     )
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -128,7 +130,7 @@ export async function listProblems(): Promise<ProblemSummary[]> {
 export async function listProblemHeads(): Promise<Problem[]> {
   const { data, error } = await db()
     .from("problems")
-    .select("id, title, year, question_no, created_at")
+    .select("id, title, year, question_no, instruction, created_at")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data as ProblemRow[]).map(toProblem);
@@ -140,7 +142,7 @@ export async function getProblemWithSentences(
   const { data, error } = await db()
     .from("problems")
     .select(
-      "id, title, year, question_no, created_at, sentences(id, paragraph_index, sentence_index, text, word_count)",
+      "id, title, year, question_no, instruction, created_at, sentences(id, paragraph_index, sentence_index, text, word_count)",
     )
     .eq("id", id)
     .maybeSingle();

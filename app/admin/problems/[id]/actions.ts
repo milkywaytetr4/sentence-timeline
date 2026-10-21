@@ -16,6 +16,7 @@ const saveSchema = z.object({
   title: z.string().trim().min(1, "タイトルを入力してください").max(200),
   year: z.string().trim().max(40),
   questionNo: z.string().trim().max(40),
+  instruction: z.string().trim().max(1000),
   paragraphs: z
     .array(
       z.object({
@@ -49,7 +50,8 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
       error: parsed.error.issues[0]?.message ?? "入力が不正です。",
     };
   }
-  const { problemId, title, year, questionNo, paragraphs } = parsed.data;
+  const { problemId, title, year, questionNo, instruction, paragraphs } =
+    parsed.data;
 
   const rows = paragraphs.flatMap((p, pi) =>
     p.sentences.map((s, si) => ({
@@ -88,6 +90,7 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
     p_question_no: questionNo,
     p_source_path: null,
     p_sentences: rows,
+    p_instruction: instruction,
   });
   if (error) {
     console.error("save_problem failed", error);

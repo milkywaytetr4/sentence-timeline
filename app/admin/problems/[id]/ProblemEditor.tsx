@@ -44,6 +44,7 @@ export function ProblemEditor({
   const [title, setTitle] = useState(problem.title);
   const [year, setYear] = useState(problem.year);
   const [questionNo, setQuestionNo] = useState(problem.questionNo);
+  const [instruction, setInstruction] = useState(problem.instruction);
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<{
     tone: "ok" | "error";
@@ -79,6 +80,7 @@ export function ProblemEditor({
         title,
         year,
         questionNo,
+        instruction,
         paragraphs: paras.map((p) => ({
           sentences: p.rows.map((r) => ({ id: r.id, text: r.text })),
         })),
@@ -175,6 +177,18 @@ export function ProblemEditor({
                 value={title}
                 onChange={(e) => {
                   setTitle(e.target.value);
+                  setDirty(true);
+                }}
+              />
+            </label>
+            <label className="col-span-2 flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary) sm:col-span-3">
+              設問文
+              <textarea
+                className="field h-auto! resize-y py-2.5! leading-[1.7]"
+                rows={2}
+                value={instruction}
+                onChange={(e) => {
+                  setInstruction(e.target.value);
                   setDirty(true);
                 }}
               />

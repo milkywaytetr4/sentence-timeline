@@ -78,6 +78,7 @@ type Props = {
   problemId: string;
   title: string;
   attemptName: string;
+  instruction: string;
   sentences: Sentence[];
   initialEvents: StoredEvent[];
   initialAnswer: string | null;
@@ -88,6 +89,7 @@ export function Recorder({
   problemId,
   title,
   attemptName,
+  instruction,
   sentences,
   initialEvents,
   initialAnswer,
@@ -337,9 +339,11 @@ export function Recorder({
             }
             aria-hidden={mode === "paused" || mode === "waiting"}
           >
-            <p className="m-0 text-[14px] text-(--text-tertiary)">
-              次の英文の要旨を、70〜80字の日本語でまとめよ。
-            </p>
+            {instruction && (
+              <p className="m-0 text-[14px] whitespace-pre-line text-(--text-tertiary)">
+                {instruction}
+              </p>
+            )}
             {paragraphs.map(([pIndex, list]) => (
               <p
                 key={pIndex}

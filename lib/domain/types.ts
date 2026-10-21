@@ -40,6 +40,8 @@ export type Problem = {
   title: string;
   year: string;
   questionNo: string;
+  /** 計測画面で本文の上に出す設問文 */
+  instruction: string;
   createdAt: string;
 };
 
