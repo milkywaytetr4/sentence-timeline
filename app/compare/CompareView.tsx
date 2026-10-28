@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useToast } from "@/components/Toast";
 import { IconButton, Select, Tabs } from "@/components/ui";
 import { formatDate } from "@/lib/domain/format";
+import { choiceName, layoutProblem } from "@/lib/domain/layout";
 import { countChars } from "@/lib/domain/text";
 import {
   buildTimeline,
@@ -25,6 +26,7 @@ import {
 import {
   type Attempt,
   attemptLabel,
+  type ProblemKind,
   ROLE_LABEL,
   type Role,
   type Sentence,
@@ -45,6 +47,8 @@ const PARA_COLORS = [
 ];
 const SHADES = [100, 66, 40];
 const WRITING_COLOR = "var(--ink-300)";
+// 選択肢は本文の段落と区別できるよう無彩色にする。灰色の「答案作成中」は第1問(B)には現れないので紛れない
+const CHOICE_COLOR = "var(--ink-700)";
 const IDLE_COLOR =
   "repeating-linear-gradient(135deg, var(--ink-200) 0 4px, var(--ink-100) 4px 8px)";
 const SLOT_COLORS = [
@@ -97,12 +101,14 @@ function defaultSlots(
 
 export function CompareView({
   problemId,
+  kind,
   problemOptions,
   sentences,
   attempts,
   initialSelected,
 }: {
   problemId: string;
+  kind: ProblemKind;
   problemOptions: { value: string; label: string }[];
   sentences: Sentence[];
   attempts: AttemptData[];
@@ -145,7 +151,27 @@ export function CompareView({
     () => new Map(sentences.map((s) => [s.id, s])),
     [sentences],
   );
-  const paragraphCount = new Set(sentences.map((s) => s.paragraphIndex)).size;
+  const layout = useMemo(() => layoutProblem(sentences), [sentences]);
+  const paragraphCount = layout.numberOf.size;
+  /** 段落の中の文番号。文挿入では空所が文の位置に入るので、sentenceIndex ではなく文だけで数える */
+  const sentenceNo = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const para of layout.passage) {
+      const body = para.rows.filter((r) => r.kind === "sentence");
+      for (const [i, r] of body.entries()) m.set(r.id, i + 1);
+    }
+    return m;
+  }, [layout]);
+  const choiceOrder = useMemo(
+    () => new Map(layout.choices.map((c, i) => [c.id, i])),
+    [layout],
+  );
+  const insertion = kind !== "summary";
+  const choiceColor = (id: string) =>
+    mix(CHOICE_COLOR, SHADES[(choiceOrder.get(id) ?? 0) % SHADES.length]);
+  /** 本文の段落の色。段落挿入の空所の段落を飛ばした段落番号で決める */
+  const colorOfParagraph = (paragraphIndex: number) =>
+    paraColor((layout.numberOf.get(paragraphIndex) ?? 1) - 1);
 
   const barsFor = (tl: Timeline): Bar[] => {
     const plain = (
@@ -174,16 +200,27 @@ export function CompareView({
         const s = seg.sentenceId ? sentenceById.get(seg.sentenceId) : undefined;
         if (seg.kind !== "sentence" || !s)
           return plain(seg.kind, seg.start, seg.duration);
+        if (s.kind === "choice") {
+          return {
+            kind: seg.kind,
+            start: seg.start,
+            duration: seg.duration,
+            review: seg.review,
+            color: choiceColor(s.id),
+            title: `${seg.review ? "見返し · " : ""}${choiceName(s)}`,
+            detail: detail(s.wordCount, seg.duration),
+          };
+        }
         return {
           kind: seg.kind,
           start: seg.start,
           duration: seg.duration,
           review: seg.review,
           color: mix(
-            paraColor(s.paragraphIndex),
-            SHADES[s.sentenceIndex % SHADES.length],
+            colorOfParagraph(s.paragraphIndex),
+            SHADES[((sentenceNo.get(s.id) ?? 1) - 1) % SHADES.length],
           ),
-          title: `${seg.review ? "見返し · " : ""}${s.paragraphIndex + 1}段落${s.sentenceIndex + 1}文目`,
+          title: `${seg.review ? "見返し · " : ""}${layout.numberOf.get(s.paragraphIndex) ?? "?"}段落${sentenceNo.get(s.id) ?? "?"}文目`,
           detail: detail(s.wordCount, seg.duration),
         };
       });
@@ -199,13 +236,26 @@ export function CompareView({
         (n, id) => n + (sentenceById.get(id)?.wordCount ?? 0),
         0,
       );
+      // 選択肢は1つで1段落なので、段落表示でも選択肢ごとの棒になる
+      const choice = sentenceById.get(seg.sentenceIds[0]);
+      if (choice?.kind === "choice") {
+        return {
+          kind: seg.kind,
+          start: seg.start,
+          duration: seg.duration,
+          review: seg.review,
+          color: choiceColor(choice.id),
+          title: `${seg.review ? "見返し · " : ""}${choiceName(choice)}`,
+          detail: detail(words, seg.duration),
+        };
+      }
       return {
         kind: seg.kind,
         start: seg.start,
         duration: seg.duration,
         review: seg.review,
-        color: mix(paraColor(seg.paragraphIndex), 80),
-        title: `${seg.review ? "見返し · " : ""}第${seg.paragraphIndex + 1}段落`,
+        color: mix(colorOfParagraph(seg.paragraphIndex), 80),
+        title: `${seg.review ? "見返し · " : ""}第${layout.numberOf.get(seg.paragraphIndex) ?? "?"}段落`,
         detail: detail(words, seg.duration),
       };
     });
@@ -277,7 +327,17 @@ export function CompareView({
           ? [mix(paraColor(p), 80)]
           : SHADES.map((s) => mix(paraColor(p), s)),
     })),
-    { label: "答案作成中", swatches: [WRITING_COLOR] },
+    ...(layout.choices.length > 0
+      ? [
+          {
+            label: "選択肢",
+            swatches: SHADES.slice(0, layout.choices.length).map((s) =>
+              mix(CHOICE_COLOR, s),
+            ),
+          },
+        ]
+      : []),
+    ...(insertion ? [] : [{ label: "答案作成中", swatches: [WRITING_COLOR] }]),
     { label: "最初の文を選ぶ前", swatches: [IDLE_COLOR] },
   ];
 
@@ -604,26 +664,31 @@ export function CompareView({
         </div>
 
         <p className="m-0 text-[12px] font-medium text-(--text-tertiary)">
-          同じ段落の色が後ろに再び現れる箇所が戻り読み、読了線より右の色付き部分が答案作成中の見返しです。一時停止中の時間は含みません。
+          {insertion
+            ? "同じ段落の色が後ろに再び現れる箇所が戻り読み、灰色の濃淡の部分が選択肢を見ている時間です。一時停止中の時間は含みません。"
+            : "同じ段落の色が後ろに再び現れる箇所が戻り読み、読了線より右の色付き部分が答案作成中の見返しです。一時停止中の時間は含みません。"}
         </p>
 
-        <section className="flex flex-col gap-3">
-          <span className="text-[14px] font-semibold">解答</span>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {slots.map((id, si) => {
-              const a = id ? byId.get(id) : undefined;
-              return (
-                // biome-ignore lint/suspicious/noArrayIndexKey: 帯と同じく位置そのものが識別子
-                <div key={si} className="flex flex-col gap-2">
-                  <AnswerCard attempt={a} color={slotColor(si)} />
-                  {a?.answer && (
-                    <AiAnswerCard attempt={a} color={slotColor(si)} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        {/* 第1問(B)の解答は対面で照合するので、記録していない */}
+        {!insertion && (
+          <section className="flex flex-col gap-3">
+            <span className="text-[14px] font-semibold">解答</span>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {slots.map((id, si) => {
+                const a = id ? byId.get(id) : undefined;
+                return (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 帯と同じく位置そのものが識別子
+                  <div key={si} className="flex flex-col gap-2">
+                    <AnswerCard attempt={a} color={slotColor(si)} />
+                    {a?.answer && (
+                      <AiAnswerCard attempt={a} color={slotColor(si)} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );

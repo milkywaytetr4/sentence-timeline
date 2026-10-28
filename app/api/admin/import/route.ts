@@ -23,6 +23,7 @@ const metaSchema = z.object({
   title: z.string().trim().min(1, "タイトルを入力してください").max(200),
   year: z.string().trim().max(40),
   questionNo: z.string().trim().max(40),
+  kind: z.enum(["summary", "paragraph_insertion", "sentence_insertion"]),
 });
 
 /** スクリーンショットを受け取り、private バケットに保存してから本文を抽出し、問題として登録する */
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
     title: form.get("title"),
     year: form.get("year") ?? "",
     questionNo: form.get("questionNo") ?? "",
+    kind: form.get("kind") ?? "summary",
   });
   if (!meta.success) {
     return NextResponse.json(
@@ -122,7 +124,7 @@ export async function POST(request: Request) {
 
   let passage: ExtractedPassage;
   try {
-    passage = await extractPassage(images);
+    passage = await extractPassage(images, meta.data.kind);
   } catch (e) {
     console.error("extract failed", e);
     const message =
@@ -131,12 +133,14 @@ export async function POST(request: Request) {
   }
 
   const sentences = passage.paragraphs.flatMap((list, p) =>
-    list.map((text, s) => ({
+    list.map((row, s) => ({
       id: null,
       paragraph_index: p,
       sentence_index: s,
-      text,
-      word_count: countWords(text),
+      kind: row.kind,
+      label: row.label,
+      text: row.text,
+      word_count: countWords(row.text),
     })),
   );
 
@@ -147,8 +151,10 @@ export async function POST(request: Request) {
     p_question_no: meta.data.questionNo,
     p_source_path: folder,
     p_sentences: sentences,
-    // 読み取れなかったときは null にして、列の既定値（要約問題の文言）を入れる
-    p_instruction: passage.instruction || null,
+    // 要約問題で読み取れなかったときは null にして、列の既定値（要約問題の文言）を入れる
+    p_instruction:
+      passage.instruction || (meta.data.kind === "summary" ? null : ""),
+    p_kind: meta.data.kind,
   });
   if (error) {
     console.error("save_problem failed", error);

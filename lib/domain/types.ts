@@ -27,10 +27,34 @@ export type TimelineEvent = {
 
 export type StoredEvent = TimelineEvent & { voided: boolean };
 
+/**
+ * - summary: 第1問(A)（要約）
+ * - paragraph_insertion / sentence_insertion: 第1問(B)の段落挿入・文挿入
+ */
+export type ProblemKind =
+  | "summary"
+  | "paragraph_insertion"
+  | "sentence_insertion";
+
+export const PROBLEM_KIND_LABEL: Record<ProblemKind, string> = {
+  summary: "要約",
+  paragraph_insertion: "段落挿入",
+  sentence_insertion: "文挿入",
+};
+
+/**
+ * - sentence: 本文の文
+ * - blank: 本文中の空所。label は空所の番号
+ * - choice: 選択肢。段落挿入では選択肢1つ（label は記号）、文挿入では選択肢の一覧全体（label は null）
+ */
+export type SentenceKind = "sentence" | "blank" | "choice";
+
 export type Sentence = {
   id: string;
   paragraphIndex: number;
   sentenceIndex: number;
+  kind: SentenceKind;
+  label: string | null;
   text: string;
   wordCount: number;
 };
@@ -40,6 +64,7 @@ export type Problem = {
   title: string;
   year: string;
   questionNo: string;
+  kind: ProblemKind;
   /** 計測画面で本文の上に出す設問文 */
   instruction: string;
   createdAt: string;

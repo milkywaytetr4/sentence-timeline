@@ -13,6 +13,11 @@ export function normalizeSpaces(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** 行ごとに空白をそろえ、空行を除く。文挿入の選択肢の一覧のように、改行に意味がある文面に使う */
+export function normalizeLines(text: string): string {
+  return text.split("\n").map(normalizeSpaces).filter(Boolean).join("\n");
+}
+
 const ABBREVIATIONS = [
   "Mr.",
   "Mrs.",

@@ -20,11 +20,34 @@ function sample(): EditParagraph[] {
     {
       key: "p1",
       rows: [
-        { key: "r1", id: "s1", text: "railways in the U.S." },
-        { key: "r2", id: "s2", text: "and Europe." },
+        {
+          key: "r1",
+          id: "s1",
+          kind: "sentence",
+          label: null,
+          text: "railways in the U.S.",
+        },
+        {
+          key: "r2",
+          id: "s2",
+          kind: "sentence",
+          label: null,
+          text: "and Europe.",
+        },
       ],
     },
-    { key: "p2", rows: [{ key: "r3", id: "s3", text: "Next paragraph." }] },
+    {
+      key: "p2",
+      rows: [
+        {
+          key: "r3",
+          id: "s3",
+          kind: "sentence",
+          label: null,
+          text: "Next paragraph.",
+        },
+      ],
+    },
   ];
 }
 
@@ -36,6 +59,8 @@ describe("fromSentences", () => {
           id: "a",
           paragraphIndex: 0,
           sentenceIndex: 0,
+          kind: "sentence",
+          label: null,
           text: "A.",
           wordCount: 1,
         },
@@ -43,6 +68,8 @@ describe("fromSentences", () => {
           id: "b",
           paragraphIndex: 0,
           sentenceIndex: 1,
+          kind: "sentence",
+          label: null,
           text: "B.",
           wordCount: 1,
         },
@@ -50,6 +77,8 @@ describe("fromSentences", () => {
           id: "c",
           paragraphIndex: 1,
           sentenceIndex: 0,
+          kind: "sentence",
+          label: null,
           text: "C.",
           wordCount: 1,
         },
@@ -64,7 +93,13 @@ describe("mergeWithPrevious", () => {
   it("前の文に空白1つでつなぎ、前の文の id を残す", () => {
     const out = mergeWithPrevious(sample(), 0, 1);
     expect(out[0].rows).toEqual([
-      { key: "r1", id: "s1", text: "railways in the U.S. and Europe." },
+      {
+        key: "r1",
+        id: "s1",
+        kind: "sentence",
+        label: null,
+        text: "railways in the U.S. and Europe.",
+      },
     ]);
   });
 
@@ -73,6 +108,12 @@ describe("mergeWithPrevious", () => {
     expect(texts(out)).toEqual([
       ["railways in the U.S.", "and Europe. Next paragraph."],
     ]);
+  });
+
+  it("空所や選択肢とは結合しない", () => {
+    const paras = sample();
+    paras[1].rows[0] = { ...paras[1].rows[0], kind: "blank", label: "1" };
+    expect(texts(mergeWithPrevious(paras, 1, 0))).toEqual(texts(paras));
   });
 
   it("元の配列を変更しない", () => {

@@ -1,11 +1,18 @@
-import type { Sentence } from "./types";
+import type { Sentence, SentenceKind } from "./types";
 
 /**
  * 問題編集画面の文・段落の操作。どれも元の配列を変更せず、新しい配列を返す。
  * id は保存済みの文の id（新しく分割してできた文は null）、key は画面上の識別子。
+ * 結合・分割は本文の文（kind = "sentence"）どうしでだけ行う。
  */
 
-export type EditRow = { key: string; id: string | null; text: string };
+export type EditRow = {
+  key: string;
+  id: string | null;
+  kind: SentenceKind;
+  label: string | null;
+  text: string;
+};
 export type EditParagraph = { key: string; rows: EditRow[] };
 
 export function fromSentences(
@@ -19,7 +26,13 @@ export function fromSentences(
       out.push({ key: newKey(), rows: [] });
       currentIndex = s.paragraphIndex;
     }
-    out[out.length - 1].rows.push({ key: newKey(), id: s.id, text: s.text });
+    out[out.length - 1].rows.push({
+      key: newKey(),
+      id: s.id,
+      kind: s.kind,
+      label: s.label,
+      text: s.text,
+    });
   }
   return out;
 }
@@ -34,17 +47,18 @@ export function mergeWithPrevious(
 ): EditParagraph[] {
   const next = paras.map((p) => ({ ...p, rows: [...p.rows] }));
   const row = next[pi]?.rows[si];
-  if (!row) return [...paras];
+  const prev = si > 0 ? next[pi].rows[si - 1] : next[pi - 1]?.rows.at(-1);
+  if (!row || !prev || row.kind !== "sentence" || prev.kind !== "sentence") {
+    return [...paras];
+  }
+  const merged = { ...prev, text: join(prev.text, row.text) };
   if (si > 0) {
-    const prev = next[pi].rows[si - 1];
-    next[pi].rows[si - 1] = { ...prev, text: join(prev.text, row.text) };
+    next[pi].rows[si - 1] = merged;
     next[pi].rows.splice(si, 1);
     return next;
   }
-  if (pi === 0) return [...paras];
   const prevRows = next[pi - 1].rows;
-  const last = prevRows[prevRows.length - 1];
-  prevRows[prevRows.length - 1] = { ...last, text: join(last.text, row.text) };
+  prevRows[prevRows.length - 1] = merged;
   next[pi].rows.splice(0, 1);
   return next.filter((p) => p.rows.length > 0);
 }
@@ -58,7 +72,7 @@ export function splitAt(
   newKey: () => string,
 ): EditParagraph[] | null {
   const row = paras[pi]?.rows[si];
-  if (!row) return null;
+  if (!row || row.kind !== "sentence") return null;
   const left = row.text.slice(0, pos).trim();
   const right = row.text.slice(pos).trim();
   if (!left || !right) return null;
@@ -67,7 +81,7 @@ export function splitAt(
     si,
     1,
     { ...row, text: left },
-    { key: newKey(), id: null, text: right },
+    { key: newKey(), id: null, kind: "sentence", label: null, text: right },
   );
   return next;
 }
@@ -116,6 +130,19 @@ export function removeRow(
       i === pi ? { ...p, rows: p.rows.filter((_, j) => j !== si) } : p,
     )
     .filter((p) => p.rows.length > 0);
+}
+
+export function updateLabel(
+  paras: readonly EditParagraph[],
+  pi: number,
+  si: number,
+  label: string,
+): EditParagraph[] {
+  return paras.map((p, i) =>
+    i === pi
+      ? { ...p, rows: p.rows.map((r, j) => (j === si ? { ...r, label } : r)) }
+      : p,
+  );
 }
 
 export function updateText(

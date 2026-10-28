@@ -3,6 +3,7 @@ import {
   countChars,
   countWords,
   detectSplitWarning,
+  normalizeLines,
   normalizeSpaces,
 } from "./text";
 
@@ -31,6 +32,12 @@ describe("countWords", () => {
 
   it("略語や数字は1語として数える", () => {
     expect(countWords("the U.S. in 1883")).toBe(4);
+  });
+});
+
+describe("normalizeLines", () => {
+  it("改行を残して、行の中の空白をそろえる", () => {
+    expect(normalizeLines(" a)  one\n\n b)\ttwo ")).toBe("a) one\nb) two");
   });
 });
 

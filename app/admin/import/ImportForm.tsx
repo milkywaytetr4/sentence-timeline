@@ -13,8 +13,17 @@ import {
 import { Button, IconButton } from "@/components/ui";
 import { shrinkImage } from "@/lib/client/shrinkImage";
 import { MAX_IMAGES, MAX_TOTAL_IMAGE_BYTES } from "@/lib/domain/image";
+import { PROBLEM_KIND_LABEL, type ProblemKind } from "@/lib/domain/types";
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg"];
+
+const PROBLEM_KINDS = Object.keys(PROBLEM_KIND_LABEL) as ProblemKind[];
+
+const DEFAULT_QUESTION_NO: Record<ProblemKind, string> = {
+  summary: "1(A)",
+  paragraph_insertion: "1(B)",
+  sentence_insertion: "1(B)",
+};
 
 type Picked = { id: string; file: File; url: string };
 
@@ -25,6 +34,8 @@ export function ImportForm() {
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [kind, setKind] = useState<ProblemKind>("summary");
+  const [questionNo, setQuestionNo] = useState(DEFAULT_QUESTION_NO.summary);
 
   const addFiles = async (files: Iterable<File>) => {
     const list = [...files];
@@ -190,13 +201,40 @@ export function ImportForm() {
       )}
 
       <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-[130px_130px_minmax(0,1fr)]">
+        <label className="col-span-2 flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary) sm:col-span-3">
+          種類
+          <select
+            name="kind"
+            value={kind}
+            onChange={(e) => {
+              const next = e.target.value as ProblemKind;
+              setKind(next);
+              // 大問の欄を書き換えていなければ、種類に合わせた既定値にそろえる
+              setQuestionNo((q) =>
+                q === DEFAULT_QUESTION_NO[kind] ? DEFAULT_QUESTION_NO[next] : q,
+              );
+            }}
+            className="field"
+          >
+            {PROBLEM_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {PROBLEM_KIND_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary)">
           年度
           <input name="year" placeholder="2024 / 練習" className="field" />
         </label>
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary)">
           大問
-          <input name="questionNo" defaultValue="1(A)" className="field" />
+          <input
+            name="questionNo"
+            value={questionNo}
+            onChange={(e) => setQuestionNo(e.target.value)}
+            className="field"
+          />
         </label>
         <label className="col-span-2 flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary) sm:col-span-1">
           タイトル

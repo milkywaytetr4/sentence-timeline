@@ -29,6 +29,7 @@ export default async function AttemptPage({
       problemId={attempt.problemId}
       title={problemLabel(data.problem)}
       attemptName={attemptLabel(attempt)}
+      kind={data.problem.kind}
       instruction={data.problem.instruction}
       sentences={data.sentences}
       initialEvents={attempt.events}

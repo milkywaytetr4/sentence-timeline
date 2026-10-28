@@ -20,10 +20,16 @@ import {
   removeRow,
   splitAt,
   startParagraphAt,
+  updateLabel,
   updateText,
 } from "@/lib/domain/editing";
+import { blankText, choiceName } from "@/lib/domain/layout";
 import { detectSplitWarning, splitWarningMessage } from "@/lib/domain/text";
-import type { Problem, Sentence } from "@/lib/domain/types";
+import {
+  PROBLEM_KIND_LABEL,
+  type Problem,
+  type Sentence,
+} from "@/lib/domain/types";
 import { saveProblem } from "./actions";
 
 let keySeq = 0;
@@ -82,7 +88,12 @@ export function ProblemEditor({
         questionNo,
         instruction,
         paragraphs: paras.map((p) => ({
-          sentences: p.rows.map((r) => ({ id: r.id, text: r.text })),
+          sentences: p.rows.map((r) => ({
+            id: r.id,
+            kind: r.kind,
+            label: r.label,
+            text: r.text,
+          })),
         })),
       });
       if (res.ok) {
@@ -95,8 +106,22 @@ export function ProblemEditor({
     });
   };
 
-  const flat = paras.flatMap((p) => p.rows);
-  const totalSentences = flat.length;
+  const bodyRows = paras.flatMap((p) =>
+    p.rows.filter((r) => r.kind === "sentence"),
+  );
+  const totalSentences = bodyRows.length;
+  const bodyParagraphs = paras.filter((p) =>
+    p.rows.some((r) => r.kind === "sentence"),
+  ).length;
+  // 見出しの段落番号は、空所だけの段落と選択肢を飛ばして本文の段落だけで振る
+  let paragraphNo = 0;
+  const headings = paras.map((p) => {
+    const first = p.rows[0];
+    if (first?.kind === "choice") return choiceName(first);
+    if (p.rows.every((r) => r.kind === "blank")) return "空所";
+    paragraphNo += 1;
+    return `第${paragraphNo}段落`;
+  });
 
   return (
     <div className="dot-bg flex h-dvh flex-col">
@@ -148,6 +173,12 @@ export function ProblemEditor({
           )}
 
           <div className="frame grid grid-cols-2 gap-3.5 p-5 sm:grid-cols-[130px_130px_minmax(0,1fr)]">
+            <div className="col-span-2 flex items-center gap-2 text-[12px] font-medium text-(--text-secondary) sm:col-span-3">
+              種類
+              <Badge tone="neutral" size="sm">
+                {PROBLEM_KIND_LABEL[problem.kind]}
+              </Badge>
+            </div>
             <label className="flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary)">
               年度
               <input
@@ -202,7 +233,7 @@ export function ProblemEditor({
             </div>
           ) : (
             <div className="px-2 text-[14px] text-(--text-secondary)">
-              {paras.length}段落 · {totalSentences}
+              {bodyParagraphs}段落 · {totalSentences}
               文。分割は、分けたい位置にカーソルを置いてから押します。
             </div>
           )}
@@ -212,27 +243,48 @@ export function ProblemEditor({
               <section key={p.key} className="flex flex-col gap-2">
                 <div className="mt-3 flex items-center gap-3 pb-1">
                   <h2 className="m-0 text-[14px] font-semibold whitespace-nowrap">
-                    第{pi + 1}段落
+                    {headings[pi]}
                   </h2>
                   <span className="h-[1.5px] flex-1 bg-(--border-subtle)" />
-                  {!locked && pi > 0 && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        change(joinWithPreviousParagraph(paras, pi))
-                      }
-                      className="text-[12px] font-medium whitespace-nowrap text-(--text-link)"
-                    >
-                      前の段落とつなぐ
-                    </button>
-                  )}
+                  {!locked &&
+                    pi > 0 &&
+                    [p, paras[pi - 1]].every((q) =>
+                      q.rows.every((r) => r.kind !== "choice"),
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          change(joinWithPreviousParagraph(paras, pi))
+                        }
+                        className="text-[12px] font-medium whitespace-nowrap text-(--text-link)"
+                      >
+                        前の段落とつなぐ
+                      </button>
+                    )}
                 </div>
                 {p.rows.map((r, si) => {
                   const nextText =
                     p.rows[si + 1]?.text ??
                     paras[pi + 1]?.rows[0]?.text ??
                     null;
-                  const warning = detectSplitWarning(r.text, nextText);
+                  const warning =
+                    r.kind === "sentence"
+                      ? detectSplitWarning(r.text, nextText)
+                      : null;
+                  const prevRow =
+                    si > 0 ? p.rows[si - 1] : paras[pi - 1]?.rows.at(-1);
+                  const labelInput = (
+                    <label className="flex items-center gap-1.5 text-[12px] font-medium text-(--text-secondary)">
+                      {r.kind === "blank" ? "空所の番号" : "記号"}
+                      <input
+                        className="field h-8! w-16 px-2!"
+                        value={r.label ?? ""}
+                        onChange={(e) =>
+                          change(updateLabel(paras, pi, si, e.target.value))
+                        }
+                      />
+                    </label>
+                  );
                   return (
                     <div
                       key={r.key}
@@ -248,19 +300,35 @@ export function ProblemEditor({
                         {pi + 1}-{si + 1}
                       </span>
                       <div className="flex flex-col items-start gap-1.5">
-                        <textarea
-                          ref={(el) => {
-                            if (el) textareas.current.set(r.key, el);
-                            else textareas.current.delete(r.key);
-                          }}
-                          aria-label={`${pi + 1}段落${si + 1}文目`}
-                          value={r.text}
-                          onChange={(e) =>
-                            change(updateText(paras, pi, si, e.target.value))
-                          }
-                          rows={Math.max(1, Math.ceil(r.text.length / 80))}
-                          className="w-full resize-none rounded-(--radius-6) border-none bg-transparent px-1 py-1 text-[16px] leading-[1.6] outline-none [field-sizing:content] focus:bg-(--surface-card) focus:shadow-(--focus-ring)"
-                        />
+                        {r.kind === "blank" ? (
+                          <div className="flex items-center gap-3 py-1">
+                            <span className="text-[16px] text-(--text-tertiary)">
+                              {blankText(r.label)}
+                            </span>
+                            {labelInput}
+                          </div>
+                        ) : (
+                          <>
+                            {r.kind === "choice" &&
+                              r.label !== null &&
+                              labelInput}
+                            <textarea
+                              ref={(el) => {
+                                if (el) textareas.current.set(r.key, el);
+                                else textareas.current.delete(r.key);
+                              }}
+                              aria-label={`${pi + 1}段落${si + 1}文目`}
+                              value={r.text}
+                              onChange={(e) =>
+                                change(
+                                  updateText(paras, pi, si, e.target.value),
+                                )
+                              }
+                              rows={Math.max(1, Math.ceil(r.text.length / 80))}
+                              className="w-full resize-none rounded-(--radius-6) border-none bg-transparent px-1 py-1 text-[16px] leading-[1.6] outline-none [field-sizing:content] focus:bg-(--surface-card) focus:shadow-(--focus-ring)"
+                            />
+                          </>
+                        )}
                         {warning && (
                           <Badge tone="amber" size="sm">
                             {splitWarningMessage(warning)}
@@ -269,27 +337,30 @@ export function ProblemEditor({
                       </div>
                       {!locked && (
                         <div className="col-start-2 flex flex-wrap gap-1.5 lg:col-start-3">
-                          {(si > 0 || pi > 0) && (
+                          {r.kind === "sentence" &&
+                            prevRow?.kind === "sentence" && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                icon={Merge}
+                                onClick={() =>
+                                  change(mergeWithPrevious(paras, pi, si))
+                                }
+                              >
+                                前の文と結合
+                              </Button>
+                            )}
+                          {r.kind === "sentence" && (
                             <Button
                               variant="secondary"
                               size="sm"
-                              icon={Merge}
-                              onClick={() =>
-                                change(mergeWithPrevious(paras, pi, si))
-                              }
+                              icon={Split}
+                              onClick={() => split(pi, si, r.key)}
                             >
-                              前の文と結合
+                              分割
                             </Button>
                           )}
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            icon={Split}
-                            onClick={() => split(pi, si, r.key)}
-                          >
-                            分割
-                          </Button>
-                          {si > 0 && (
+                          {r.kind !== "choice" && si > 0 && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -303,8 +374,8 @@ export function ProblemEditor({
                           )}
                           <button
                             type="button"
-                            aria-label="この文を削除"
-                            title="この文を削除"
+                            aria-label="この行を削除"
+                            title="この行を削除"
                             onClick={() => change(removeRow(paras, pi, si))}
                             className="inline-flex size-8 items-center justify-center rounded-full text-(--text-tertiary) hover:bg-(--red-100) hover:text-(--red-500)"
                           >

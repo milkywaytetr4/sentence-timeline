@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { countWords, normalizeSpaces } from "@/lib/domain/text";
+import { countWords, normalizeLines, normalizeSpaces } from "@/lib/domain/text";
 import type { Sentence } from "@/lib/domain/types";
 import { requireTeacher } from "@/lib/server/auth";
 import { db } from "@/lib/server/db";
@@ -22,13 +22,32 @@ const saveSchema = z.object({
       z.object({
         sentences: z
           .array(
-            z.object({
-              id: z.uuid().nullable(),
-              text: z
-                .string()
-                .transform(normalizeSpaces)
-                .pipe(z.string().min(1, "空の文があります")),
-            }),
+            z
+              .object({
+                id: z.uuid().nullable(),
+                kind: z.enum(["sentence", "blank", "choice"]),
+                label: z
+                  .string()
+                  .trim()
+                  .max(10)
+                  .nullable()
+                  .transform((v) => v || null),
+                text: z.string(),
+              })
+              // 文挿入の選択肢の一覧は1行に1つずつ並べるので、改行を残す
+              .transform((s) => ({
+                ...s,
+                text:
+                  s.kind === "choice"
+                    ? normalizeLines(s.text)
+                    : normalizeSpaces(s.text),
+              }))
+              .refine((s) => s.kind === "blank" || s.text !== "", {
+                message: "空の文があります",
+              })
+              .refine((s) => s.kind !== "blank" || s.label !== null, {
+                message: "番号のない空所があります",
+              }),
           )
           .min(1, "空の段落があります"),
       }),
@@ -58,6 +77,8 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
       id: s.id,
       paragraph_index: pi,
       sentence_index: si,
+      kind: s.kind,
+      label: s.label,
       text: s.text,
       word_count: countWords(s.text),
     })),

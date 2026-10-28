@@ -25,6 +25,9 @@ export async function requestRevision(
   }
   const data = await getProblemWithSentences(attempt.problemId);
   if (!data) return { ok: false, error: "問題が見つかりません。" };
+  if (data.problem.kind !== "summary") {
+    return { ok: false, error: "改稿できるのは要約問題の解答だけです。" };
+  }
 
   let aiAnswer: string;
   try {

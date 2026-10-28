@@ -9,16 +9,20 @@ import {
   CloudOff,
   Eye,
   Hand,
+  ListChecks,
   Pause,
   PencilLine,
   Play,
   Timer,
   Undo2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   useEffect,
   useMemo,
   useRef,
@@ -27,6 +31,7 @@ import {
 import { useToast } from "@/components/Toast";
 import { Badge, Button, ConfirmDialog, IconButton } from "@/components/ui";
 import { loadQueue, useEventSync } from "@/lib/client/useEventSync";
+import { blankText, layoutProblem } from "@/lib/domain/layout";
 import { countChars } from "@/lib/domain/text";
 import {
   buildTimeline,
@@ -37,6 +42,7 @@ import {
 } from "@/lib/domain/timeline";
 import type {
   EventType,
+  ProblemKind,
   Sentence,
   StoredEvent,
   TimelineEvent,
@@ -78,6 +84,7 @@ type Props = {
   problemId: string;
   title: string;
   attemptName: string;
+  kind: ProblemKind;
   instruction: string;
   sentences: Sentence[];
   initialEvents: StoredEvent[];
@@ -89,6 +96,7 @@ export function Recorder({
   problemId,
   title,
   attemptName,
+  kind,
   instruction,
   sentences,
   initialEvents,
@@ -109,6 +117,10 @@ export function Recorder({
   /** ダイアログを閉じても書きかけの解答を残す */
   const [answer, setAnswer] = useState(initialAnswer ?? "");
   const [now, setNow] = useState(() => Date.now());
+  const [showChoices, setShowChoices] = useState(false);
+  // 第1問(B)は本文と選択肢を行き来しながら解くので、読了を挟まず、読解中のまま解答完了まで進める。
+  // 解答の照合は対面で行うため、解答も入力させない
+  const insertion = kind !== "summary";
 
   // サーバーにまだ届いていない記録（前回の通信断の分）を画面の状態に反映する。
   // localStorage はサーバー描画時に読めないので、マウント後に合わせる
@@ -217,7 +229,7 @@ export function Recorder({
   };
 
   const submit = async () => {
-    enqueue({ op: "answer", text: answer.trim() });
+    if (!insertion) enqueue({ op: "answer", text: answer.trim() });
     const finishEvent = record("finish");
     const result = await flush();
     if (result === "synced") {
@@ -254,15 +266,7 @@ export function Recorder({
     router.push("/");
   };
 
-  const paragraphs = useMemo(() => {
-    const map = new Map<number, Sentence[]>();
-    for (const s of sentences) {
-      const list = map.get(s.paragraphIndex) ?? [];
-      list.push(s);
-      map.set(s.paragraphIndex, list);
-    }
-    return [...map.entries()].sort((a, b) => a[0] - b[0]);
-  }, [sentences]);
+  const layout = useMemo(() => layoutProblem(sentences), [sentences]);
 
   const elapsed = elapsedSeconds(events, now);
 
@@ -280,9 +284,51 @@ export function Recorder({
         : mode === "reading" && !state.focusedId
           ? {
               icon: Hand,
-              text: "読み始める文をタップしてください。計測は文ごとに行います。",
+              text: insertion
+                ? "読み始める文をタップしてください。選択肢は「選択肢」ボタンで開きます。"
+                : "読み始める文をタップしてください。計測は文ごとに行います。",
             }
           : null;
+
+  const highlight = (id: string): CSSProperties | undefined => {
+    const isCur = id === state.focusedId;
+    if (state.phase === "reading" && isCur) {
+      return {
+        background: "var(--sky-300)",
+        boxShadow: "0 0 0 2px var(--sky-500)",
+      };
+    }
+    if (state.phase === "reading" && state.visited.has(id)) {
+      return { background: "var(--sky-50)" };
+    }
+    if (mode === "review" && isCur) {
+      return {
+        background: "var(--sky-200)",
+        boxShadow: "0 0 0 1.5px var(--sky-400)",
+      };
+    }
+    return undefined;
+  };
+
+  const tapHandlers = (id: string): TapHandlers => ({
+    role: "button",
+    tabIndex: 0,
+    "aria-pressed": id === state.focusedId,
+    onClick: (e) => {
+      e.stopPropagation();
+      tapSentence(id);
+    },
+    onKeyDown: (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        tapSentence(id);
+      }
+    },
+  });
+
+  const measuring =
+    mode === "reading" || mode === "answer" || mode === "review";
 
   const [bg, dot] = MODE_BG[mode];
   const ringColor =
@@ -344,60 +390,46 @@ export function Recorder({
                 {instruction}
               </p>
             )}
-            {paragraphs.map(([pIndex, list]) => (
-              <p
-                key={pIndex}
-                className="relative m-0 text-[18px] leading-[2.05] text-pretty sm:text-[20px]"
-              >
-                <span className="absolute top-1.5 -left-7 text-[12px] font-medium text-(--text-placeholder) select-none sm:-left-9">
-                  {pIndex + 1}
-                </span>
-                {list.map((s) => {
-                  const isCur = s.id === state.focusedId;
-                  let style: CSSProperties | undefined;
-                  if (state.phase === "reading" && isCur) {
-                    style = {
-                      background: "var(--sky-300)",
-                      boxShadow: "0 0 0 2px var(--sky-500)",
-                    };
-                  } else if (
-                    state.phase === "reading" &&
-                    state.visited.has(s.id)
-                  ) {
-                    style = { background: "var(--sky-50)" };
-                  } else if (mode === "review" && isCur) {
-                    style = {
-                      background: "var(--sky-200)",
-                      boxShadow: "0 0 0 1.5px var(--sky-400)",
-                    };
-                  }
-                  return (
-                    // biome-ignore lint/a11y/useSemanticElements: 文中で改行を保ったまま折り返すため button ではなく span にする
-                    <span
-                      key={s.id}
-                      role="button"
-                      tabIndex={0}
-                      aria-pressed={isCur}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        tapSentence(s.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          tapSentence(s.id);
-                        }
-                      }}
-                      className="mr-1 cursor-pointer rounded-(--radius-6) px-1 py-1.5 [box-decoration-break:clone] transition-[background] duration-(--dur-fast) outline-none focus-visible:outline-2 focus-visible:outline-(--sky-400)"
-                      style={style}
-                    >
-                      {s.text}
-                    </span>
-                  );
-                })}
-              </p>
-            ))}
+            {layout.passage.map((para) =>
+              para.number === null ? (
+                // 段落挿入の空所。段落1つ分の場所を取り、段落番号は振らない
+                <p
+                  key={para.paragraphIndex}
+                  className="m-0 text-center text-[18px] leading-[2.05] text-(--text-tertiary) select-none sm:text-[20px]"
+                >
+                  {para.rows.map((s) => blankText(s.label)).join(" ")}
+                </p>
+              ) : (
+                <p
+                  key={para.paragraphIndex}
+                  className="relative m-0 text-[18px] leading-[2.05] text-pretty sm:text-[20px]"
+                >
+                  <span className="absolute top-1.5 -left-7 text-[12px] font-medium text-(--text-placeholder) select-none sm:-left-9">
+                    {para.number}
+                  </span>
+                  {para.rows.map((s) =>
+                    s.kind === "blank" ? (
+                      <span
+                        key={s.id}
+                        className="mr-1 px-1 py-1.5 text-(--text-tertiary) select-none"
+                      >
+                        {blankText(s.label)}
+                      </span>
+                    ) : (
+                      // 文中で改行を保ったまま折り返すため、button ではなく span に role="button" を付ける
+                      <span
+                        key={s.id}
+                        {...tapHandlers(s.id)}
+                        className="mr-1 cursor-pointer rounded-(--radius-6) px-1 py-1.5 [box-decoration-break:clone] transition-[background] duration-(--dur-fast) outline-none focus-visible:outline-2 focus-visible:outline-(--sky-400)"
+                        style={highlight(s.id)}
+                      >
+                        {s.text}
+                      </span>
+                    ),
+                  )}
+                </p>
+              ),
+            )}
           </div>
         </div>
       </div>
@@ -436,19 +468,40 @@ export function Recorder({
             />
           )}
         </div>
-        <div className="flex justify-center">
+        <div className="flex justify-center gap-3">
           {mode === "waiting" && (
             <Button size="xl" icon={Play} onClick={() => record("resume")}>
               開始する
             </Button>
           )}
-          {mode === "reading" && (
+          {insertion && measuring && (
+            <Button
+              size="lg"
+              variant="secondary"
+              icon={ListChecks}
+              aria-pressed={showChoices}
+              onClick={() => setShowChoices((v) => !v)}
+            >
+              選択肢
+            </Button>
+          )}
+          {mode === "reading" && !insertion && (
             <Button
               size="xl"
               icon={BookCheck}
               onClick={() => openConfirm("readDone")}
             >
               読了
+            </Button>
+          )}
+          {mode === "reading" && insertion && (
+            <Button
+              size="lg"
+              variant="success"
+              icon={CircleCheckBig}
+              onClick={() => openConfirm("finish")}
+            >
+              解答完了
             </Button>
           )}
           {mode === "answer" && (
@@ -488,12 +541,16 @@ export function Recorder({
           title={confirm === "finish" ? "解答完了にしますか" : "読了にしますか"}
           body={
             confirm === "finish"
-              ? "計測を終えて、解答と記録を保存します。"
+              ? insertion
+                ? "計測を終えて、記録を保存します。"
+                : "計測を終えて、解答と記録を保存します。"
               : "答案作成に移ります。本文はあとから見返せます。"
           }
           okLabel={confirm === "finish" ? "解答完了にする" : "読了にする"}
           okVariant={confirm === "finish" ? "success" : "primary"}
-          okDisabled={confirm === "finish" && answer.trim() === ""}
+          okDisabled={
+            confirm === "finish" && !insertion && answer.trim() === ""
+          }
           onCancel={cancelConfirm}
           onOk={() => {
             setConfirm(null);
@@ -504,7 +561,7 @@ export function Recorder({
             }
           }}
         >
-          {confirm === "finish" && (
+          {confirm === "finish" && !insertion && (
             <label className="mt-2 flex w-full flex-col gap-1.5 text-left">
               <span className="flex items-baseline justify-between text-[14px] font-semibold">
                 解答
@@ -527,6 +584,15 @@ export function Recorder({
         </ConfirmDialog>
       )}
 
+      {insertion && showChoices && measuring && (
+        <ChoicesPanel
+          choices={layout.choices}
+          tapHandlers={tapHandlers}
+          highlight={highlight}
+          onClose={() => setShowChoices(false)}
+        />
+      )}
+
       {mode === "paused" && (
         <div className="pointer-events-none absolute inset-x-0 top-16 bottom-[100px] flex items-center justify-center p-4">
           <div
@@ -546,6 +612,70 @@ export function Recorder({
         </div>
       )}
     </div>
+  );
+}
+
+type TapHandlers = {
+  role: "button";
+  tabIndex: number;
+  "aria-pressed": boolean;
+  onClick: (e: ReactMouseEvent) => void;
+  onKeyDown: (e: ReactKeyboardEvent) => void;
+};
+
+/**
+ * 本文の右に重ねて出す選択肢の一覧。閉じても記録は変えず、次に文をタップするまで
+ * 選択肢を見ていたものとして扱う（読解中に文から文へ移るときと同じ扱い）
+ */
+function ChoicesPanel({
+  choices,
+  tapHandlers,
+  highlight,
+  onClose,
+}: {
+  choices: Sentence[];
+  tapHandlers: (id: string) => TapHandlers;
+  highlight: (id: string) => CSSProperties | undefined;
+  onClose: () => void;
+}) {
+  return (
+    <aside
+      aria-label="選択肢"
+      className="absolute top-16 right-0 bottom-[100px] z-10 flex w-full max-w-[520px] flex-col border-l-[1.5px] border-(--border-subtle) bg-(--surface-card) shadow-(--shadow-3)"
+    >
+      <div className="flex h-14 flex-none items-center gap-2 border-b-[1.5px] border-(--border-subtle) px-4">
+        <ListChecks size={18} aria-hidden className="text-(--text-tertiary)" />
+        <span className="text-[15px] font-semibold">選択肢</span>
+        <IconButton
+          icon={X}
+          label="選択肢を閉じる"
+          className="ml-auto"
+          onClick={onClose}
+        />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
+        {choices.length === 0 && (
+          <p className="m-0 text-[14px] text-(--text-tertiary)">
+            選択肢が登録されていません。
+          </p>
+        )}
+        {choices.map((c) => (
+          <div
+            key={c.id}
+            {...tapHandlers(c.id)}
+            className="flex cursor-pointer gap-3 rounded-(--radius-12) border-[1.5px] border-(--border-subtle) px-4 py-3 text-[17px] leading-[1.9] transition-[background] duration-(--dur-fast) outline-none focus-visible:outline-2 focus-visible:outline-(--sky-400)"
+            style={highlight(c.id)}
+          >
+            {c.label && (
+              <span className="flex-none font-semibold text-(--text-secondary)">
+                {c.label})
+              </span>
+            )}
+            <span className="whitespace-pre-line">{c.text}</span>
+          </div>
+        ))}
+      </div>
+    </aside>
   );
 }
 

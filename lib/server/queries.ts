@@ -4,8 +4,10 @@ import type {
   AttemptStatus,
   EventType,
   Problem,
+  ProblemKind,
   Role,
   Sentence,
+  SentenceKind,
   StoredEvent,
 } from "@/lib/domain/types";
 import { db } from "./db";
@@ -15,6 +17,7 @@ type ProblemRow = {
   title: string;
   year: string;
   question_no: string;
+  kind: ProblemKind;
   instruction: string;
   created_at: string;
 };
@@ -22,6 +25,8 @@ type SentenceRow = {
   id: string;
   paragraph_index: number;
   sentence_index: number;
+  kind: SentenceKind;
+  label: string | null;
   text: string;
   word_count: number;
 };
@@ -50,6 +55,7 @@ const toProblem = (r: ProblemRow): Problem => ({
   title: r.title,
   year: r.year,
   questionNo: r.question_no,
+  kind: r.kind,
   instruction: r.instruction,
   createdAt: r.created_at,
 });
@@ -58,6 +64,8 @@ const toSentence = (r: SentenceRow): Sentence => ({
   id: r.id,
   paragraphIndex: r.paragraph_index,
   sentenceIndex: r.sentence_index,
+  kind: r.kind,
+  label: r.label,
   text: r.text,
   wordCount: r.word_count,
 });
@@ -113,26 +121,30 @@ export async function listProblems(): Promise<ProblemSummary[]> {
   const { data, error } = await db()
     .from("problems")
     .select(
-      `id, title, year, question_no, instruction, created_at, sentences(paragraph_index), attempts(${ATTEMPT_WITH_EVENTS})`,
+      `id, title, year, question_no, kind, instruction, created_at, sentences(paragraph_index, kind), attempts(${ATTEMPT_WITH_EVENTS})`,
     )
     .order("created_at", { ascending: false });
   if (error) throw error;
   type Row = ProblemRow & {
-    sentences: { paragraph_index: number }[];
+    sentences: { paragraph_index: number; kind: SentenceKind }[];
     attempts: (AttemptRow & { events: EventRow[] })[];
   };
-  return (data as Row[]).map((r) => ({
-    ...toProblem(r),
-    paragraphCount: new Set(r.sentences.map((s) => s.paragraph_index)).size,
-    sentenceCount: r.sentences.length,
-    attempts: r.attempts.map(toAttemptWithEvents).sort(byStarted),
-  }));
+  return (data as Row[]).map((r) => {
+    // 空所と選択肢は本文の段落・文に数えない
+    const body = r.sentences.filter((s) => s.kind === "sentence");
+    return {
+      ...toProblem(r),
+      paragraphCount: new Set(body.map((s) => s.paragraph_index)).size,
+      sentenceCount: body.length,
+      attempts: r.attempts.map(toAttemptWithEvents).sort(byStarted),
+    };
+  });
 }
 
 export async function listProblemHeads(): Promise<Problem[]> {
   const { data, error } = await db()
     .from("problems")
-    .select("id, title, year, question_no, instruction, created_at")
+    .select("id, title, year, question_no, kind, instruction, created_at")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data as ProblemRow[]).map(toProblem);
@@ -144,7 +156,7 @@ export async function getProblemWithSentences(
   const { data, error } = await db()
     .from("problems")
     .select(
-      "id, title, year, question_no, instruction, created_at, sentences(id, paragraph_index, sentence_index, text, word_count)",
+      "id, title, year, question_no, kind, instruction, created_at, sentences(id, paragraph_index, sentence_index, kind, label, text, word_count)",
     )
     .eq("id", id)
     .maybeSingle();

@@ -48,6 +48,7 @@ export default async function ComparePage({
         <CompareView
           key={problemId}
           problemId={problemId}
+          kind={data.problem.kind}
           problemOptions={problems.map((p) => ({
             value: p.id,
             label: problemLabel(p),
