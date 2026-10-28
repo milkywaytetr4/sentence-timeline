@@ -10,6 +10,9 @@ import {
 } from "@/lib/server/queries";
 import { CompareView } from "./CompareView";
 
+// 解答の改稿（Server Action）で LLM を呼ぶと1分前後かかる
+export const maxDuration = 300;
+
 export default async function ComparePage({
   searchParams,
 }: PageProps<"/compare">) {

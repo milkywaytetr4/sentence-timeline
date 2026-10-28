@@ -34,6 +34,7 @@ type AttemptRow = {
   started_at: string;
   finished_at: string | null;
   answer: string | null;
+  ai_answer: string | null;
 };
 type EventRow = {
   id: string;
@@ -73,6 +74,7 @@ const toAttempt = (r: AttemptRow): Attempt => ({
   startedAt: r.started_at,
   finishedAt: r.finished_at,
   answer: r.answer,
+  aiAnswer: r.ai_answer,
 });
 
 const toEvent = (r: EventRow): StoredEvent => ({
@@ -93,7 +95,7 @@ export type ProblemSummary = Problem & {
 };
 
 const ATTEMPT_WITH_EVENTS =
-  "id, problem_id, role, attempt_no, status, started_at, finished_at, answer, events(id, seq, type, sentence_id, client_ts, voided)";
+  "id, problem_id, role, attempt_no, status, started_at, finished_at, answer, ai_answer, events(id, seq, type, sentence_id, client_ts, voided)";
 
 function toAttemptWithEvents(
   r: AttemptRow & { events: EventRow[] },
@@ -201,4 +203,20 @@ export async function problemHasAttempts(problemId: string): Promise<boolean> {
     .eq("problem_id", problemId);
   if (error) throw error;
   return (count ?? 0) > 0;
+}
+
+export async function getAttemptAnswer(
+  id: string,
+): Promise<{ problemId: string; answer: string | null } | null> {
+  const { data, error } = await db()
+    .from("attempts")
+    .select("problem_id, answer")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    problemId: data.problem_id as string,
+    answer: data.answer as string | null,
+  };
 }

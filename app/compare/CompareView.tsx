@@ -1,9 +1,17 @@
 "use client";
 
-import { ChevronsUpDown, FileText, Plus, X } from "lucide-react";
+import {
+  ChevronsUpDown,
+  FileText,
+  LoaderCircle,
+  Plus,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Select, Tabs } from "@/components/ui";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useToast } from "@/components/Toast";
+import { IconButton, Select, Tabs } from "@/components/ui";
 import { formatDate } from "@/lib/domain/format";
 import { countChars } from "@/lib/domain/text";
 import {
@@ -22,6 +30,7 @@ import {
   type Sentence,
   type TimelineEvent,
 } from "@/lib/domain/types";
+import { requestRevision } from "./actions";
 
 type AttemptData = Attempt & { events: TimelineEvent[] };
 type ViewMode = "para" | "sent";
@@ -601,14 +610,18 @@ export function CompareView({
         <section className="flex flex-col gap-3">
           <span className="text-[14px] font-semibold">解答</span>
           <div className="grid gap-4 sm:grid-cols-2">
-            {slots.map((id, si) => (
-              <AnswerCard
+            {slots.map((id, si) => {
+              const a = id ? byId.get(id) : undefined;
+              return (
                 // biome-ignore lint/suspicious/noArrayIndexKey: 帯と同じく位置そのものが識別子
-                key={si}
-                attempt={id ? byId.get(id) : undefined}
-                color={slotColor(si)}
-              />
-            ))}
+                <div key={si} className="flex flex-col gap-2">
+                  <AnswerCard attempt={a} color={slotColor(si)} />
+                  {a?.answer && (
+                    <AiAnswerCard attempt={a} color={slotColor(si)} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>
@@ -651,6 +664,73 @@ function AnswerCard({
       ) : (
         <p className="m-0 text-[14px] text-(--text-tertiary)">
           {a ? "解答の記録はありません。" : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** 同じ帯の色の破線枠にして、上の解答を AI が改稿したものであることを示す */
+function AiAnswerCard({
+  attempt: a,
+  color,
+}: {
+  attempt: Attempt;
+  color: string;
+}) {
+  const toast = useToast();
+  const [pending, startTransition] = useTransition();
+
+  const onGenerate = () => {
+    startTransition(async () => {
+      // 保存後の再描画で props の aiAnswer が新しくなるので、改稿はここでは受け取らない
+      const res = await requestRevision(a.id);
+      if (!res.ok) {
+        toast({
+          tone: "error",
+          title: "改稿できませんでした",
+          body: res.error,
+        });
+      }
+    });
+  };
+
+  return (
+    <div
+      className="flex flex-col gap-2 rounded-(--radius-12) bg-(--surface-card) px-4 py-3.5"
+      style={{ border: `2px dashed ${color}` }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[15px] font-bold">AI による改稿</span>
+        <span className="flex items-center gap-2">
+          {a.aiAnswer && (
+            <span className="text-[12px] font-medium text-(--text-tertiary) tabular-nums">
+              {countChars(a.aiAnswer)}字
+            </span>
+          )}
+          <IconButton
+            icon={pending ? LoaderCircle : Sparkles}
+            label={
+              pending
+                ? "改稿しています…"
+                : a.aiAnswer
+                  ? "AI で改稿し直す"
+                  : "AI で改稿する"
+            }
+            size={32}
+            disabled={pending}
+            className={pending ? "[&_svg]:animate-spin" : ""}
+            onClick={onGenerate}
+          />
+        </span>
+      </div>
+      {a.aiAnswer ? (
+        <p className="m-0 text-[16px] leading-[1.8] break-words whitespace-pre-wrap">
+          {a.aiAnswer}
+        </p>
+      ) : (
+        <p className="m-0 text-[14px] text-(--text-tertiary)">
+          {pending ? "改稿しています…" : "ボタンを押すと AI が改稿します。"}
         </p>
       )}
     </div>

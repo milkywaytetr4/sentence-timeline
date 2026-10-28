@@ -55,6 +55,8 @@ export type Attempt = {
   finishedAt: string | null;
   /** 解答完了の前は null */
   answer: string | null;
+  /** 解答の書き口を残して LLM が改稿した解答。改稿していなければ null */
+  aiAnswer: string | null;
 };
 
 /** 大問番号「1(A)」を「第1問(A)」の形にして、年度・タイトルと並べる */

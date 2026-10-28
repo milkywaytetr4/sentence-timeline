@@ -7,14 +7,14 @@
 
 - Next.js（App Router）+ TypeScript、Vercel に載せる前提
 - Supabase（Postgres + Storage）。ブラウザからは一切触らず、DB アクセスはサーバー側（Route Handler と Server Action）に閉じる
-- スクリーンショットからの本文抽出は OpenAI API（`gpt-6-luna`）をサーバーから呼ぶ
+- スクリーンショットからの本文抽出と解答の改稿は OpenAI API（`gpt-6-luna`）をサーバーから呼ぶ
 
 | パス | 内容 |
 | --- | --- |
 | `/enter` | 合言葉の入力。ロール入りの署名付き httpOnly cookie を発行する |
 | `/` | 問題一覧、取り組み履歴、新規取り組みの開始 |
 | `/attempts/[id]` | 計測画面 |
-| `/compare` | タイムライン比較（`?problem=...&a=id1,id2` で版を指定できる） |
+| `/compare` | タイムライン比較（`?problem=...&a=id1,id2` で版を指定できる）。各解答の下で、解答の書き口を残して LLM に改稿させられる（取り組みごとに最新の1回を保存） |
 | `/admin/import` | スクリーンショットからの問題の取り込み（先生のみ） |
 | `/admin/problems/[id]` | 文・段落の区切りとメタ情報の編集（先生のみ） |
 
