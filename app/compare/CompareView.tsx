@@ -120,7 +120,7 @@ export function CompareView({
   );
   const [editing, setEditing] = useState<number | null>(null);
   const [flash, setFlash] = useState<number | null>(null);
-  const [mode, setMode] = useState<ViewMode>("sent");
+  const [mode, setMode] = useState<ViewMode>("para");
   const [tip, setTip] = useState<{ slot: number; index: number } | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
