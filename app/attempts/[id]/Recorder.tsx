@@ -2,7 +2,6 @@
 
 import {
   BookCheck,
-  Check,
   ChevronLeft,
   CircleCheckBig,
   CirclePause,
@@ -23,6 +22,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type UIEvent,
   useEffect,
   useMemo,
   useRef,
@@ -79,6 +79,9 @@ const MODE_BG: Record<Mode, [string, string]> = {
   done: ["var(--sky-100)", "var(--sky-400)"],
 };
 
+/** ヘッダーの高さ（px）。h-16 と揃える */
+const HEADER_HEIGHT = 64;
+
 type Props = {
   attemptId: string;
   problemId: string;
@@ -118,6 +121,9 @@ export function Recorder({
   const [answer, setAnswer] = useState(initialAnswer ?? "");
   const [now, setNow] = useState(() => Date.now());
   const [showChoices, setShowChoices] = useState(false);
+  /** 本文を下へ読み進めている間はヘッダーを隠し、上へ戻したら出す */
+  const [headerShown, setHeaderShown] = useState(true);
+  const lastScrollTop = useRef(0);
   // 第1問(B)は本文と選択肢を行き来しながら解くので、読了を挟まず、読解中のまま解答完了まで進める。
   // 解答の照合は対面で行うため、解答も入力させない
   const insertion = kind !== "summary";
@@ -266,6 +272,16 @@ export function Recorder({
     router.push("/");
   };
 
+  const onScroll = (e: UIEvent<HTMLDivElement>) => {
+    // iOS では端で跳ね返る間に scrollTop が負になるので、0 未満は先頭として扱う
+    const top = Math.max(0, e.currentTarget.scrollTop);
+    const delta = top - lastScrollTop.current;
+    lastScrollTop.current = top;
+    if (top < HEADER_HEIGHT) setHeaderShown(true);
+    else if (delta > 4) setHeaderShown(false);
+    else if (delta < -4) setHeaderShown(true);
+  };
+
   const layout = useMemo(() => layoutProblem(sentences), [sentences]);
 
   const elapsed = elapsedSeconds(events, now);
@@ -341,7 +357,10 @@ export function Recorder({
       className="dot-bg relative flex h-dvh flex-col overflow-hidden"
       style={{ "--dot-bg": bg, "--dot-fg": dot } as CSSProperties}
     >
-      <header className="flex h-16 flex-none items-center gap-3 border-b-[1.5px] border-(--border-subtle) bg-(--surface-card) px-3 sm:gap-3.5 sm:px-6">
+      {/* キーボード操作でヘッダー内にフォーカスが移ったときは、隠れていても出す */}
+      <header
+        className={`absolute inset-x-0 top-0 z-20 flex h-16 items-center gap-3 border-b-[1.5px] border-(--border-subtle) bg-(--surface-card) px-3 transition-transform duration-(--dur-base) sm:gap-3.5 sm:px-6 ${headerShown ? "" : "-translate-y-full focus-within:translate-y-0"}`}
+      >
         <IconButton icon={ChevronLeft} label="一覧へ" onClick={goBack} />
         <span className="min-w-0 truncate text-[14px] font-semibold">
           {title}
@@ -364,7 +383,8 @@ export function Recorder({
       {/* biome-ignore lint/a11y/noStaticElementInteractions: 同上 */}
       <div
         onClick={tapBackground}
-        className={`flex min-h-0 flex-1 flex-col items-center gap-4 overflow-auto px-3 pt-6 pb-7 sm:px-6 ${mode === "review" ? "cursor-pointer" : ""}`}
+        onScroll={onScroll}
+        className={`flex min-h-0 flex-1 flex-col items-center gap-4 overflow-auto px-3 pt-[88px] pb-32 sm:px-6 ${mode === "review" ? "cursor-pointer" : ""}`}
       >
         {note && (
           <div className="flex w-full max-w-[820px] items-center gap-2.5 px-2 py-1 text-[14px] text-(--text-secondary)">
@@ -434,43 +454,59 @@ export function Recorder({
         </div>
       </div>
 
-      <footer className="grid h-[100px] flex-none grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-t-[1.5px] border-(--border-subtle) bg-(--surface-card) px-3 sm:gap-4 sm:px-6">
-        <div className="flex items-center gap-3">
+      {/* 帯状のフッターは本文の表示領域を削るので置かず、ボタンだけを左下と右下に浮かせる。
+          本文の末尾がボタンに隠れないよう、スクロール領域の下に余白を取っている */}
+      <div className="absolute bottom-6 left-3 z-20 flex items-center gap-3 sm:left-6">
+        <IconButton
+          icon={Undo2}
+          label="直前のタップを取り消す"
+          variant="soft"
+          size={56}
+          className="shadow-(--shadow-float)"
+          disabled={
+            !undoTarget ||
+            mode === "paused" ||
+            mode === "waiting" ||
+            mode === "done"
+          }
+          onClick={undo}
+        />
+        {(mode === "reading" || mode === "answer" || mode === "review") && (
           <IconButton
-            icon={Undo2}
-            label="直前のタップを取り消す"
+            icon={Pause}
+            label="一時停止"
             variant="soft"
             size={56}
-            disabled={
-              !undoTarget ||
-              mode === "paused" ||
-              mode === "waiting" ||
-              mode === "done"
-            }
-            onClick={undo}
+            className="shadow-(--shadow-float)"
+            onClick={() => record("pause")}
           />
-          {(mode === "reading" || mode === "answer" || mode === "review") && (
-            <IconButton
-              icon={Pause}
-              label="一時停止"
-              variant="soft"
-              size={56}
-              onClick={() => record("pause")}
-            />
-          )}
-          {mode === "paused" && (
-            <IconButton
-              icon={Play}
-              label="再開"
-              variant="inverse"
-              size={56}
-              onClick={() => record("resume")}
-            />
-          )}
-        </div>
-        <div className="flex justify-center gap-3">
+        )}
+        {mode === "paused" && (
+          <IconButton
+            icon={Play}
+            label="再開"
+            variant="inverse"
+            size={56}
+            className="shadow-(--shadow-float)"
+            onClick={() => record("resume")}
+          />
+        )}
+      </div>
+
+      <div className="absolute right-3 bottom-6 z-20 flex flex-col items-end gap-2 sm:right-6">
+        <SyncIndicator
+          pendingCount={pendingCount}
+          status={status}
+          onRetry={() => void flush()}
+        />
+        <div className="flex gap-3">
           {mode === "waiting" && (
-            <Button size="xl" icon={Play} onClick={() => record("resume")}>
+            <Button
+              size="lg"
+              icon={Play}
+              className="shadow-(--shadow-float)"
+              onClick={() => record("resume")}
+            >
               開始する
             </Button>
           )}
@@ -480,6 +516,7 @@ export function Recorder({
               variant="secondary"
               icon={ListChecks}
               aria-pressed={showChoices}
+              className="shadow-(--shadow-float)"
               onClick={() => setShowChoices((v) => !v)}
             >
               選択肢
@@ -487,14 +524,15 @@ export function Recorder({
           )}
           {mode === "reading" && !insertion && (
             <Button
-              size="xl"
+              size="lg"
               icon={BookCheck}
+              className="shadow-(--shadow-float)"
               onClick={() => openConfirm("readDone")}
             >
               読了
             </Button>
           )}
-          {mode === "reading" && insertion && (
+          {(mode === "answer" || (mode === "reading" && insertion)) && (
             <Button
               size="lg"
               variant="success"
@@ -504,33 +542,19 @@ export function Recorder({
               解答完了
             </Button>
           )}
-          {mode === "answer" && (
-            <Button
-              size="xl"
-              variant="success"
-              icon={CircleCheckBig}
-              onClick={() => openConfirm("finish")}
-            >
-              解答完了
-            </Button>
-          )}
           {mode === "review" && (
             <Button
-              size="xl"
+              size="lg"
               variant="secondary"
               icon={PencilLine}
+              className="shadow-(--shadow-float)"
               onClick={() => record("unfocus")}
             >
               答案に戻る
             </Button>
           )}
         </div>
-        <SyncIndicator
-          pendingCount={pendingCount}
-          status={status}
-          onRetry={() => void flush()}
-        />
-      </footer>
+      </div>
 
       {confirm && (
         <ConfirmDialog
@@ -589,12 +613,13 @@ export function Recorder({
           choices={layout.choices}
           tapHandlers={tapHandlers}
           highlight={highlight}
+          headerShown={headerShown}
           onClose={() => setShowChoices(false)}
         />
       )}
 
       {mode === "paused" && (
-        <div className="pointer-events-none absolute inset-x-0 top-16 bottom-[100px] flex items-center justify-center p-4">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
           <div
             className="pointer-events-auto flex flex-col items-center gap-[18px] rounded-(--radius-frame) bg-(--surface-card) px-14 py-9 shadow-(--shadow-float)"
             style={{ border: "var(--ring-frame) solid var(--ink-300)" }}
@@ -631,17 +656,19 @@ function ChoicesPanel({
   choices,
   tapHandlers,
   highlight,
+  headerShown,
   onClose,
 }: {
   choices: Sentence[];
   tapHandlers: (id: string) => TapHandlers;
   highlight: (id: string) => CSSProperties | undefined;
+  headerShown: boolean;
   onClose: () => void;
 }) {
   return (
     <aside
       aria-label="選択肢"
-      className="absolute top-16 right-0 bottom-[100px] z-10 flex w-full max-w-[520px] flex-col border-l-[1.5px] border-(--border-subtle) bg-(--surface-card) shadow-(--shadow-3)"
+      className={`absolute right-0 bottom-0 z-10 flex w-full max-w-[520px] flex-col border-l-[1.5px] border-(--border-subtle) bg-(--surface-card) shadow-(--shadow-3) transition-[top] duration-(--dur-base) ${headerShown ? "top-16" : "top-0"}`}
     >
       <div className="flex h-14 flex-none items-center gap-2 border-b-[1.5px] border-(--border-subtle) px-4">
         <ListChecks size={18} aria-hidden className="text-(--text-tertiary)" />
@@ -653,7 +680,7 @@ function ChoicesPanel({
           onClick={onClose}
         />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4 pb-28">
         {choices.length === 0 && (
           <p className="m-0 text-[14px] text-(--text-tertiary)">
             選択肢が登録されていません。
@@ -690,27 +717,21 @@ function SyncIndicator({
 }) {
   if (status === "unauthorized") {
     return (
-      <div className="flex justify-end text-right text-[12px] text-(--amber-700)">
+      <div className="flex justify-end rounded-full bg-(--surface-card) px-3 py-1 text-right text-[12px] text-(--amber-700) shadow-(--shadow-float)">
         <Link href="/enter">
           入場し直してください（記録は端末に残っています）
         </Link>
       </div>
     );
   }
-  if (pendingCount === 0) {
-    return (
-      <div className="flex items-center justify-end gap-1 text-[12px] font-medium text-(--text-tertiary)">
-        <Check size={14} aria-hidden />
-        保存済み
-      </div>
-    );
-  }
+  // 保存できている間は何も出さない。タップのたびに表示が出入りすると気が散るため
+  if (pendingCount === 0) return null;
   return (
     <div className="flex justify-end">
       <button
         type="button"
         onClick={onRetry}
-        className={`flex items-center gap-1 rounded-full px-2 py-1 text-right text-[12px] font-medium ${status === "retrying" ? "text-(--amber-700)" : "text-(--text-tertiary)"}`}
+        className={`flex items-center gap-1 rounded-full bg-(--surface-card) px-3 py-1 text-right shadow-(--shadow-float) text-[12px] font-medium ${status === "retrying" ? "text-(--amber-700)" : "text-(--text-tertiary)"}`}
       >
         {status === "retrying" && <CloudOff size={14} aria-hidden />}
         未送信 {pendingCount}件{status === "retrying" ? "・再送します" : ""}
