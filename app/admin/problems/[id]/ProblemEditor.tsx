@@ -2,6 +2,7 @@
 
 import {
   ChevronLeft,
+  ClipboardPaste,
   Lock,
   Merge,
   Pilcrow,
@@ -13,6 +14,7 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { Badge, Button, TopBar } from "@/components/ui";
 import {
+  appendParagraphs,
   type EditParagraph,
   fromSentences,
   joinWithPreviousParagraph,
@@ -24,6 +26,7 @@ import {
   updateText,
 } from "@/lib/domain/editing";
 import { blankText, choiceName } from "@/lib/domain/layout";
+import { parsePassageText } from "@/lib/domain/passage";
 import { detectSplitWarning, splitWarningMessage } from "@/lib/domain/text";
 import {
   PROBLEM_KIND_LABEL,
@@ -39,10 +42,13 @@ export function ProblemEditor({
   problem,
   sentences,
   locked,
+  truncated,
 }: {
   problem: Problem;
   sentences: Sentence[];
   locked: boolean;
+  /** 抽出がコンテンツフィルターで打ち切られ、途中までしか取り込めていない */
+  truncated: boolean;
 }) {
   const [paras, setParas] = useState<EditParagraph[]>(() =>
     fromSentences(sentences, newKey),
@@ -57,6 +63,7 @@ export function ProblemEditor({
     text: string;
   } | null>(null);
   const [pending, startTransition] = useTransition();
+  const [pasted, setPasted] = useState("");
   const textareas = useRef(new Map<string, HTMLTextAreaElement>());
 
   const change = (next: EditParagraph[]) => {
@@ -77,6 +84,16 @@ export function ProblemEditor({
       return;
     }
     change(next);
+  };
+
+  const append = () => {
+    const added = parsePassageText(pasted, problem.kind);
+    if (added.length === 0) {
+      setMessage({ tone: "error", text: "追加する本文を貼り付けてください。" });
+      return;
+    }
+    change(appendParagraphs(paras, added, problem.kind, newKey));
+    setPasted("");
   };
 
   const save = () => {
@@ -225,6 +242,17 @@ export function ProblemEditor({
               />
             </label>
           </div>
+
+          {truncated && (
+            <p
+              role="note"
+              className="m-0 rounded-(--radius-16) border-[1.5px] border-(--amber-500) bg-(--amber-100) px-4 py-3 text-[14px] leading-[1.7]"
+            >
+              LLM
+              の安全フィルターで抽出が途中で止められたため、読み取れたところまでを取り込みました。
+              最後の文が途中で切れていないかを確かめ、残りの本文と選択肢を下の「本文を貼り付けて追加」から足してください。
+            </p>
+          )}
 
           {locked ? (
             <div className="flex items-start gap-2 px-2 text-[14px] text-(--text-secondary)">
@@ -389,6 +417,38 @@ export function ProblemEditor({
               </section>
             ))}
           </div>
+
+          {!locked && (
+            <div className="frame flex flex-col gap-3 p-5">
+              <label className="flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary)">
+                本文を貼り付けて追加
+                <textarea
+                  value={pasted}
+                  onChange={(e) => setPasted(e.target.value)}
+                  rows={6}
+                  placeholder={
+                    problem.kind === "summary"
+                      ? "段落の間は空行で区切ります。"
+                      : "段落の間は空行で区切ります。\n空所は ( 1 ) のように番号を括弧で囲み、選択肢は a) のように記号で始めます。"
+                  }
+                  className="field h-auto! resize-y py-2.5! text-[15px] leading-[1.7]"
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="secondary"
+                  icon={ClipboardPaste}
+                  onClick={append}
+                  disabled={!pasted.trim()}
+                >
+                  末尾に追加
+                </Button>
+                <span className="text-[12px] font-medium text-(--text-tertiary)">
+                  本文は選択肢の前に、選択肢は末尾に入ります。追加したあとで保存してください。
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

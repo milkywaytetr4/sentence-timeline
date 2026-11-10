@@ -1,47 +1,57 @@
 import "server-only";
 import OpenAI from "openai";
+import { partialParse } from "openai/_vendor/partial-json-parser/parser";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import type { ImageType } from "@/lib/domain/image";
+import { choiceParagraphs, type PassageRow } from "@/lib/domain/passage";
 import { normalizeSpaces } from "@/lib/domain/text";
-import type { ProblemKind, SentenceKind } from "@/lib/domain/types";
+import type { ProblemKind } from "@/lib/domain/types";
 import { serverEnv } from "./env";
 
-const extractionSchema = z.object({
-  instruction: z.string(),
-  paragraphs: z.array(
-    z.object({
-      sentences: z.array(z.string()),
-    }),
-  ),
+/** 途中で打ち切られた出力を読むときは、形の崩れた要素を捨てて残りを生かす */
+type ListOf = <S extends z.ZodType>(item: S) => z.ZodType<z.output<S>[]>;
+
+const lenientArray: ListOf = (item) =>
+  z.preprocess(
+    (v) => (Array.isArray(v) ? v.filter((x) => item.safeParse(x).success) : []),
+    z.array(item),
+  );
+
+const schemas = (array: ListOf, text: () => z.ZodType<string>) => ({
+  summary: z.object({
+    instruction: text(),
+    paragraphs: array(z.object({ sentences: array(z.string()) })),
+  }),
+  insertion: z.object({
+    instruction: text(),
+    paragraphs: array(
+      z.object({
+        items: array(
+          z.object({ type: z.enum(["sentence", "blank"]), text: z.string() }),
+        ),
+      }),
+    ),
+    choices: array(z.object({ label: z.string(), text: z.string() })),
+  }),
 });
 
-const insertionSchema = z.object({
-  instruction: z.string(),
-  paragraphs: z.array(
-    z.object({
-      items: z.array(
-        z.object({
-          type: z.enum(["sentence", "blank"]),
-          text: z.string(),
-        }),
-      ),
-    }),
-  ),
-  choices: z.array(z.object({ label: z.string(), text: z.string() })),
-});
+const strict = schemas(
+  (item) => z.array(item),
+  () => z.string(),
+);
+const lenient = schemas(lenientArray, () => z.string().catch(""));
 
-export type ExtractedRow = {
-  kind: SentenceKind;
-  label: string | null;
-  text: string;
-};
+type SummaryOutput = z.infer<typeof strict.summary>;
+type InsertionOutput = z.infer<typeof strict.insertion>;
 
 export type ExtractedPassage = {
   /** 画像に設問文が写っていなければ空文字 */
   instruction: string;
   /** 本文の段落の後ろに、選択肢の段落を続けて並べる */
-  paragraphs: ExtractedRow[][];
+  paragraphs: PassageRow[][];
+  /** コンテンツフィルターで出力が打ち切られ、途中までしか読めていない */
+  truncated: boolean;
 };
 
 export type SourceImage = { bytes: Buffer; type: ImageType };
@@ -104,6 +114,9 @@ ${
 - 行末のハイフネーションで分かれた単語は元の1語に戻してください。それ以外の綴りや語句は、誤りに見えても原文のまま写してください。
 - 前後の空白は取り除き、文中の改行は半角スペース1つにしてください。`;
 
+const CONTENT_FILTER_MESSAGE =
+  "LLM の安全フィルターで抽出が止められました。本文をテキストで貼り付けて取り込んでください。";
+
 export const EXTRACT_UNAVAILABLE_MESSAGE =
   "OPENAI_API_KEY が未設定のため、画像から本文を抽出できません。";
 
@@ -147,33 +160,50 @@ export async function extractPassage(
 
   if (kind === "summary") {
     const response = await client.responses.parse(
-      request(zodTextFormat(extractionSchema, "passage"), SUMMARY_INSTRUCTIONS),
+      request(zodTextFormat(strict.summary, "passage"), SUMMARY_INSTRUCTIONS),
     );
-    const parsed = checkResponse(response);
-    const paragraphs = parsed.paragraphs
-      .map((p) =>
-        p.sentences
-          .map(normalizeSpaces)
-          .filter(Boolean)
-          .map((text) => ({ kind: "sentence" as const, label: null, text })),
-      )
-      .filter((p) => p.length > 0);
-    if (paragraphs.length === 0) {
-      throw new Error("本文を見つけられませんでした。");
-    }
-    return { instruction: parsed.instruction.trim(), paragraphs };
+    const { parsed, truncated } = checkResponse(response, lenient.summary);
+    return toSummaryPassage(parsed, truncated);
   }
 
   const response = await client.responses.parse(
     request(
-      zodTextFormat(insertionSchema, "passage"),
+      zodTextFormat(strict.insertion, "passage"),
       insertionInstructions(kind),
     ),
   );
-  const parsed = checkResponse(response);
+  const { parsed, truncated } = checkResponse(response, lenient.insertion);
+  return toInsertionPassage(parsed, kind, truncated);
+}
+
+function toSummaryPassage(
+  parsed: SummaryOutput,
+  truncated: boolean,
+): ExtractedPassage {
+  const paragraphs = parsed.paragraphs
+    .map((p) =>
+      p.sentences
+        .map(normalizeSpaces)
+        .filter(Boolean)
+        .map((text) => ({ kind: "sentence" as const, label: null, text })),
+    )
+    .filter((p) => p.length > 0);
+  if (paragraphs.length === 0) {
+    throw new Error(
+      truncated ? CONTENT_FILTER_MESSAGE : "本文を見つけられませんでした。",
+    );
+  }
+  return { instruction: parsed.instruction.trim(), paragraphs, truncated };
+}
+
+function toInsertionPassage(
+  parsed: InsertionOutput,
+  kind: Exclude<ProblemKind, "summary">,
+  truncated: boolean,
+): ExtractedPassage {
   const passage = parsed.paragraphs
     .map((p) =>
-      p.items.flatMap((item): ExtractedRow[] => {
+      p.items.flatMap((item): PassageRow[] => {
         const text = normalizeSpaces(item.text);
         if (!text) return [];
         return item.type === "blank"
@@ -183,7 +213,9 @@ export async function extractPassage(
     )
     .filter((p) => p.length > 0);
   if (!passage.some((p) => p.some((r) => r.kind === "sentence"))) {
-    throw new Error("本文を見つけられませんでした。");
+    throw new Error(
+      truncated ? CONTENT_FILTER_MESSAGE : "本文を見つけられませんでした。",
+    );
   }
   const choices = parsed.choices
     .map((c) => ({
@@ -191,45 +223,52 @@ export async function extractPassage(
       text: normalizeSpaces(c.text),
     }))
     .filter((c) => c.text);
-  if (choices.length === 0) {
+  // 打ち切られた場合、選択肢は本文の後ろにあるので読めていないことが多い。編集画面で足してもらう
+  if (choices.length === 0 && !truncated) {
     throw new Error("選択肢を見つけられませんでした。");
   }
-  const choiceParagraphs: ExtractedRow[][] =
-    kind === "paragraph_insertion"
-      ? choices.map((c) => [
-          { kind: "choice", label: c.label || null, text: c.text },
-        ])
-      : // 文挿入では一覧をまとめて読む時間を記録するので、一覧全体を1行にする
-        [
-          [
-            {
-              kind: "choice",
-              label: null,
-              text: choices
-                .map((c) => (c.label ? `${c.label}) ${c.text}` : c.text))
-                .join("\n"),
-            },
-          ],
-        ];
   return {
     instruction: parsed.instruction.trim(),
-    paragraphs: [...passage, ...choiceParagraphs],
+    paragraphs: [...passage, ...choiceParagraphs(kind, choices)],
+    truncated,
   };
 }
 
-/** 途中で止まった応答や拒否を例外にして、構造化出力を取り出す */
-function checkResponse<T>(response: {
-  status?: string | null;
-  incomplete_details?: { reason?: string | null } | null;
-  output: ReadonlyArray<
-    | { type: "message"; content: ReadonlyArray<{ type: string }> }
-    | { type: string }
-  >;
-  output_parsed: T | null;
-}): T {
+/**
+ * 途中で止まった応答や拒否を例外にして、構造化出力を取り出す。
+ * コンテンツフィルターで打ち切られたときだけは、途中までの出力を読んで返す。
+ * 著作物の本文をそのまま書き写すことが止められる原因になりやすく、プロンプトでは避けられないため。
+ */
+function checkResponse<T>(
+  response: {
+    status?: string | null;
+    incomplete_details?: { reason?: string | null } | null;
+    output: ReadonlyArray<
+      | {
+          type: "message";
+          content: ReadonlyArray<{ type: string; text?: string }>;
+        }
+      | { type: string }
+    >;
+    output_parsed: T | null;
+  },
+  partial: z.ZodType<T>,
+): { parsed: T; truncated: boolean } {
   if (response.status === "incomplete") {
+    const reason = response.incomplete_details?.reason;
+    if (reason === "content_filter") {
+      const text = response.output
+        .flatMap((item) =>
+          "content" in item && item.type === "message" ? item.content : [],
+        )
+        .map((part) => (part.type === "output_text" ? (part.text ?? "") : ""))
+        .join("");
+      const parsed = salvage(text, partial);
+      if (!parsed) throw new Error(CONTENT_FILTER_MESSAGE);
+      return { parsed, truncated: true };
+    }
     throw new Error(
-      response.incomplete_details?.reason === "max_output_tokens"
+      reason === "max_output_tokens"
         ? "本文が長すぎて抽出が途中で終わりました。"
         : "抽出が途中で止まりました。画像の内容を確認してください。",
     );
@@ -245,5 +284,15 @@ function checkResponse<T>(response: {
   }
   const parsed = response.output_parsed;
   if (!parsed) throw new Error("LLM の出力を読み取れませんでした。");
-  return parsed;
+  return { parsed, truncated: false };
+}
+
+function salvage<T>(text: string, schema: z.ZodType<T>): T | null {
+  if (!text) return null;
+  try {
+    const result = schema.safeParse(partialParse(text));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendParagraphs,
   type EditParagraph,
   fromSentences,
   joinWithPreviousParagraph,
@@ -157,5 +158,59 @@ describe("段落の操作", () => {
     expect(texts(removeRow(sample(), 1, 0))).toEqual([
       ["railways in the U.S.", "and Europe."],
     ]);
+  });
+});
+
+describe("appendParagraphs", () => {
+  const choiceList = (text: string): EditParagraph => ({
+    key: "c",
+    rows: [{ key: "rc", id: "sc", kind: "choice", label: null, text }],
+  });
+
+  it("本文は選択肢より前に、id のない行として足す", () => {
+    const next = appendParagraphs(
+      [...sample(), choiceList("a) One.")],
+      [[{ kind: "sentence", label: null, text: "Added." }]],
+      "sentence_insertion",
+      newKey,
+    );
+    expect(texts(next)).toEqual([
+      ["railways in the U.S.", "and Europe."],
+      ["Next paragraph."],
+      ["Added."],
+      ["a) One."],
+    ]);
+    expect(next[2].rows[0].id).toBeNull();
+  });
+
+  it("文挿入では足した選択肢を既存の一覧の行に書き足す", () => {
+    const next = appendParagraphs(
+      [choiceList("a) One.")],
+      [[{ kind: "choice", label: null, text: "b) Two." }]],
+      "sentence_insertion",
+      newKey,
+    );
+    expect(texts(next)).toEqual([["a) One.\nb) Two."]]);
+    expect(next[0].rows[0].id).toBe("sc");
+  });
+
+  it("段落挿入では選択肢を末尾に段落として足す", () => {
+    const next = appendParagraphs(
+      [
+        {
+          key: "c",
+          rows: [
+            { key: "rc", id: "sc", kind: "choice", label: "a", text: "One." },
+          ],
+        },
+      ],
+      [
+        [{ kind: "sentence", label: null, text: "Body." }],
+        [{ kind: "choice", label: "b", text: "Two." }],
+      ],
+      "paragraph_insertion",
+      newKey,
+    );
+    expect(texts(next)).toEqual([["Body."], ["One."], ["Two."]]);
   });
 });

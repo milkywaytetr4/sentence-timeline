@@ -5,6 +5,7 @@ import {
   MAX_IMAGES,
   MAX_TOTAL_IMAGE_BYTES,
 } from "@/lib/domain/image";
+import { parsePassageText } from "@/lib/domain/passage";
 import { countWords } from "@/lib/domain/text";
 import { getRole } from "@/lib/server/auth";
 import { db, IMAGE_BUCKET } from "@/lib/server/db";
@@ -26,7 +27,10 @@ const metaSchema = z.object({
   kind: z.enum(["summary", "paragraph_insertion", "sentence_insertion"]),
 });
 
-/** スクリーンショットを受け取り、private バケットに保存してから本文を抽出し、問題として登録する */
+/**
+ * スクリーンショットを受け取り、private バケットに保存してから本文を抽出し、問題として登録する。
+ * 画像の代わりに本文のテキストを受け取ったときは、LLM を使わずに分割して登録する。
+ */
 export async function POST(request: Request) {
   const role = await getRole();
   if (role !== "teacher") {
@@ -56,12 +60,28 @@ export async function POST(request: Request) {
     );
   }
 
+  const text = form.get("text");
+  if (typeof text === "string" && text.trim()) {
+    const paragraphs = parsePassageText(text, meta.data.kind);
+    if (!paragraphs.some((p) => p.some((r) => r.kind === "sentence"))) {
+      return NextResponse.json(
+        { error: "本文を見つけられませんでした。" },
+        { status: 400 },
+      );
+    }
+    return saveImported(meta.data, null, {
+      instruction: "",
+      paragraphs,
+      truncated: false,
+    });
+  }
+
   const files = form
     .getAll("images")
     .filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length === 0) {
     return NextResponse.json(
-      { error: "画像を選んでください。" },
+      { error: "画像を選ぶか、本文を貼り付けてください。" },
       { status: 400 },
     );
   }
@@ -127,11 +147,22 @@ export async function POST(request: Request) {
     passage = await extractPassage(images, meta.data.kind);
   } catch (e) {
     console.error("extract failed", e);
+    // 問題として登録しない画像は、どこからも参照されないので消す
+    await db().storage.from(IMAGE_BUCKET).remove(paths);
     const message =
       e instanceof Error ? e.message : "本文を抽出できませんでした。";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
+  return saveImported(meta.data, { folder, paths }, passage);
+}
+
+async function saveImported(
+  meta: z.infer<typeof metaSchema>,
+  /** 画像から取り込んだときの保存先。テキストから取り込んだときは null */
+  source: { folder: string; paths: string[] } | null,
+  passage: ExtractedPassage,
+) {
   const sentences = passage.paragraphs.flatMap((list, p) =>
     list.map((row, s) => ({
       id: null,
@@ -146,23 +177,26 @@ export async function POST(request: Request) {
 
   const { data, error } = await db().rpc("save_problem", {
     p_problem_id: null,
-    p_title: meta.data.title,
-    p_year: meta.data.year,
-    p_question_no: meta.data.questionNo,
-    p_source_path: folder,
+    p_title: meta.title,
+    p_year: meta.year,
+    p_question_no: meta.questionNo,
+    p_source_path: source?.folder ?? null,
     p_sentences: sentences,
     // 要約問題で読み取れなかったときは null にして、列の既定値（要約問題の文言）を入れる
-    p_instruction:
-      passage.instruction || (meta.data.kind === "summary" ? null : ""),
-    p_kind: meta.data.kind,
+    p_instruction: passage.instruction || (meta.kind === "summary" ? null : ""),
+    p_kind: meta.kind,
   });
   if (error) {
     console.error("save_problem failed", error);
+    if (source) await db().storage.from(IMAGE_BUCKET).remove(source.paths);
     return NextResponse.json(
       { error: "問題を保存できませんでした。" },
       { status: 500 },
     );
   }
 
-  return NextResponse.json({ id: data as string });
+  return NextResponse.json({
+    id: data as string,
+    truncated: passage.truncated,
+  });
 }

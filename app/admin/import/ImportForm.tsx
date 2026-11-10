@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, ScanText, X } from "lucide-react";
+import { FileText, ImagePlus, ScanText, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   type DragEvent,
@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button, IconButton } from "@/components/ui";
+import { Button, IconButton, Tabs } from "@/components/ui";
 import { shrinkImage } from "@/lib/client/shrinkImage";
 import { MAX_IMAGES, MAX_TOTAL_IMAGE_BYTES } from "@/lib/domain/image";
 import { PROBLEM_KIND_LABEL, type ProblemKind } from "@/lib/domain/types";
@@ -27,10 +27,19 @@ const DEFAULT_QUESTION_NO: Record<ProblemKind, string> = {
 
 type Picked = { id: string; file: File; url: string };
 
+type Source = "image" | "text";
+
+const SOURCES: { value: Source; label: string }[] = [
+  { value: "image", label: "画像から" },
+  { value: "text", label: "テキストから" },
+];
+
 export function ImportForm() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [source, setSource] = useState<Source>("image");
   const [images, setImages] = useState<Picked[]>([]);
+  const [text, setText] = useState("");
   const [dragging, setDragging] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +74,7 @@ export function ImportForm() {
 
   // 入力欄にフォーカスがあっても画像だけは拾えるよう、ページ全体で貼り付けを受ける
   const onPaste = useEffectEvent((e: ClipboardEvent) => {
+    if (source !== "image") return;
     const files = [...(e.clipboardData?.files ?? [])].filter((f) =>
       f.type.startsWith("image/"),
     );
@@ -87,21 +97,29 @@ export function ImportForm() {
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (images.length === 0) {
-      setError("画像を選ぶか、貼り付けてください。");
-      return;
-    }
-    if (images.length > MAX_IMAGES) {
-      setError(`画像は${MAX_IMAGES}枚までにしてください。`);
-      return;
-    }
-    if (totalBytes > MAX_TOTAL_IMAGE_BYTES) {
-      setError("画像は合計4MBまでにしてください。");
-      return;
-    }
     const form = new FormData(e.currentTarget);
     form.delete("images");
-    for (const p of images) form.append("images", p.file);
+    if (source === "text") {
+      if (!text.trim()) {
+        setError("本文を貼り付けてください。");
+        return;
+      }
+    } else {
+      if (images.length === 0) {
+        setError("画像を選ぶか、貼り付けてください。");
+        return;
+      }
+      if (images.length > MAX_IMAGES) {
+        setError(`画像は${MAX_IMAGES}枚までにしてください。`);
+        return;
+      }
+      if (totalBytes > MAX_TOTAL_IMAGE_BYTES) {
+        setError("画像は合計4MBまでにしてください。");
+        return;
+      }
+      form.delete("text");
+      for (const p of images) form.append("images", p.file);
+    }
     setPending(true);
     setError(null);
     try {
@@ -111,13 +129,16 @@ export function ImportForm() {
       });
       const body = (await res.json().catch(() => ({}))) as {
         id?: string;
+        truncated?: boolean;
         error?: string;
       };
       if (!res.ok || !body.id) {
         setError(body.error ?? "取り込みに失敗しました。");
         return;
       }
-      router.push(`/admin/problems/${body.id}`);
+      router.push(
+        `/admin/problems/${body.id}${body.truncated ? "?truncated=1" : ""}`,
+      );
     } catch {
       setError("通信に失敗しました。もう一度お試しください。");
     } finally {
@@ -130,27 +151,54 @@ export function ImportForm() {
       onSubmit={onSubmit}
       className="frame flex max-w-[680px] flex-col gap-5 p-5 sm:p-7"
     >
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
+      <Tabs
+        items={SOURCES}
+        value={source}
+        onChange={(v) => {
+          setSource(v);
+          setError(null);
         }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className="flex h-[160px] flex-col items-center justify-center gap-2.5 rounded-(--radius-20) border-[1.5px] border-dashed text-(--text-secondary) transition-[background,border-color] duration-(--dur-fast)"
-        style={{
-          borderColor: dragging ? "var(--sky-500)" : "var(--border-strong)",
-          background: dragging ? "var(--sky-200)" : "var(--surface-tint)",
-        }}
-      >
-        <ImagePlus size={32} aria-hidden />
-        <span className="text-[14px] font-semibold">
-          スクリーンショットをドロップ、または Ctrl+V で貼り付け
-        </span>
-        <span className="text-[14px] text-(--text-link)">ファイルを選ぶ</span>
-      </button>
+      />
+
+      {source === "text" && (
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary)">
+          本文
+          <textarea
+            name="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={12}
+            placeholder={
+              "段落の間は空行で区切ります。\n空所は ( 1 ) のように番号を括弧で囲み、\n選択肢は a) のように記号で始めて本文の後ろに並べます。"
+            }
+            className="field h-auto! resize-y py-2.5! text-[15px] leading-[1.7]"
+          />
+        </label>
+      )}
+
+      {source === "image" && (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          className="flex h-[160px] flex-col items-center justify-center gap-2.5 rounded-(--radius-20) border-[1.5px] border-dashed text-(--text-secondary) transition-[background,border-color] duration-(--dur-fast)"
+          style={{
+            borderColor: dragging ? "var(--sky-500)" : "var(--border-strong)",
+            background: dragging ? "var(--sky-200)" : "var(--surface-tint)",
+          }}
+        >
+          <ImagePlus size={32} aria-hidden />
+          <span className="text-[14px] font-semibold">
+            スクリーンショットをドロップ、または Ctrl+V で貼り付け
+          </span>
+          <span className="text-[14px] text-(--text-link)">ファイルを選ぶ</span>
+        </button>
+      )}
       <input
         ref={inputRef}
         type="file"
@@ -165,7 +213,7 @@ export function ImportForm() {
         }}
       />
 
-      {images.length > 0 && (
+      {source === "image" && images.length > 0 && (
         <div className="flex flex-col gap-2">
           <ol className="m-0 grid list-none grid-cols-3 gap-3 p-0 sm:grid-cols-4">
             {images.map((p, i) => (
@@ -254,14 +302,28 @@ export function ImportForm() {
       )}
 
       <div className="flex flex-wrap items-center gap-4">
-        <Button type="submit" size="lg" icon={ScanText} disabled={pending}>
-          {pending ? "抽出しています…" : "本文を抽出する"}
-        </Button>
-        <span className="text-[12px] font-medium text-(--text-tertiary)">
-          {pending
-            ? "1分ほどかかります。この画面のままお待ちください。"
-            : "抽出後、編集画面で文と段落の区切りを確認します。"}
-        </span>
+        {source === "image" ? (
+          <>
+            <Button type="submit" size="lg" icon={ScanText} disabled={pending}>
+              {pending ? "抽出しています…" : "本文を抽出する"}
+            </Button>
+            <span className="text-[12px] font-medium text-(--text-tertiary)">
+              {pending
+                ? "1分ほどかかります。この画面のままお待ちください。"
+                : "抽出後、編集画面で文と段落の区切りを確認します。"}
+            </span>
+          </>
+        ) : (
+          <>
+            <Button type="submit" size="lg" icon={FileText} disabled={pending}>
+              {pending ? "取り込んでいます…" : "本文を取り込む"}
+            </Button>
+            <span className="text-[12px] font-medium text-(--text-tertiary)">
+              LLM
+              を使わずに文へ分けます。取り込み後、編集画面で区切りを確認します。
+            </span>
+          </>
+        )}
       </div>
     </form>
   );

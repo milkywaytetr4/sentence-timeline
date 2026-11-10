@@ -8,9 +8,11 @@ import { ProblemEditor } from "./ProblemEditor";
 
 export default async function EditProblemPage({
   params,
+  searchParams,
 }: PageProps<"/admin/problems/[id]">) {
   await requireTeacher();
   const { id } = await params;
+  const { truncated } = await searchParams;
   const data = await getProblemWithSentences(id).catch(() => null);
   if (!data) notFound();
   const locked = await problemHasAttempts(id);
@@ -20,6 +22,7 @@ export default async function EditProblemPage({
       problem={data.problem}
       sentences={data.sentences}
       locked={locked}
+      truncated={truncated === "1"}
     />
   );
 }

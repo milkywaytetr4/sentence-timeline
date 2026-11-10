@@ -1,4 +1,5 @@
-import type { Sentence, SentenceKind } from "./types";
+import type { PassageRow } from "./passage";
+import type { ProblemKind, Sentence, SentenceKind } from "./types";
 
 /**
  * 問題編集画面の文・段落の操作。どれも元の配列を変更せず、新しい配列を返す。
@@ -156,4 +157,40 @@ export function updateText(
       ? { ...p, rows: p.rows.map((r, j) => (j === si ? { ...r, text } : r)) }
       : p,
   );
+}
+
+/**
+ * 貼り付けから作った段落を足す。本文は選択肢より前に、選択肢は末尾に置く。
+ * 文挿入の選択肢は一覧全体で1行なので、既にあればその行に続けて書き足す。
+ */
+export function appendParagraphs(
+  paras: readonly EditParagraph[],
+  added: readonly PassageRow[][],
+  kind: ProblemKind,
+  newKey: () => string,
+): EditParagraph[] {
+  const isChoice = (rows: readonly { kind: SentenceKind }[]) =>
+    rows.some((r) => r.kind === "choice");
+  const toParagraph = (rows: readonly PassageRow[]): EditParagraph => ({
+    key: newKey(),
+    rows: rows.map((r) => ({ ...r, key: newKey(), id: null })),
+  });
+  const body = paras.filter((p) => !isChoice(p.rows));
+  const choices = paras.filter((p) => isChoice(p.rows));
+  const addedBody = added.filter((rows) => !isChoice(rows)).map(toParagraph);
+  const addedChoices = added.filter(isChoice);
+
+  const list = choices[0]?.rows[0];
+  if (kind === "sentence_insertion" && list && addedChoices.length > 0) {
+    const text = [list.text, ...addedChoices.flat().map((r) => r.text)].join(
+      "\n",
+    );
+    return [
+      ...body,
+      ...addedBody,
+      { ...choices[0], rows: [{ ...list, text }] },
+      ...choices.slice(1),
+    ];
+  }
+  return [...body, ...addedBody, ...choices, ...addedChoices.map(toParagraph)];
 }
