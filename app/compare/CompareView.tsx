@@ -1,9 +1,12 @@
 "use client";
 
 import {
+  BookOpen,
   ChevronsUpDown,
   FileText,
   LoaderCircle,
+  Maximize2,
+  Minimize2,
   Plus,
   Sparkles,
   X,
@@ -11,9 +14,14 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useToast } from "@/components/Toast";
-import { IconButton, Select, Tabs } from "@/components/ui";
+import { Button, IconButton, Select, Tabs } from "@/components/ui";
 import { formatDate } from "@/lib/domain/format";
-import { choiceName, layoutProblem } from "@/lib/domain/layout";
+import {
+  blankText,
+  choiceName,
+  layoutProblem,
+  type ProblemLayout,
+} from "@/lib/domain/layout";
 import { countChars } from "@/lib/domain/text";
 import {
   buildTimeline,
@@ -102,6 +110,7 @@ function defaultSlots(
 export function CompareView({
   problemId,
   kind,
+  instruction,
   problemOptions,
   sentences,
   attempts,
@@ -109,6 +118,7 @@ export function CompareView({
 }: {
   problemId: string;
   kind: ProblemKind;
+  instruction: string;
   problemOptions: { value: string; label: string }[];
   sentences: Sentence[];
   attempts: AttemptData[];
@@ -122,6 +132,8 @@ export function CompareView({
   const [flash, setFlash] = useState<number | null>(null);
   const [mode, setMode] = useState<ViewMode>("para");
   const [tip, setTip] = useState<{ slot: number; index: number } | null>(null);
+  const [showPassage, setShowPassage] = useState(false);
+  const answersRef = useRef<HTMLElement>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -312,6 +324,17 @@ export function CompareView({
     setSlots((prev) => prev.filter((_, j) => j !== i));
     setEditing(null);
     setTip(null);
+  };
+
+  // 本文は画面の上半分に重ねるので、解答を下半分に送って両方を見比べられるようにする
+  const openPassage = () => {
+    setShowPassage(true);
+    requestAnimationFrame(() =>
+      answersRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      }),
+    );
   };
 
   const rows = (["teacher", "student"] as const).map((role) => ({
@@ -669,9 +692,30 @@ export function CompareView({
             : "同じ段落の色が後ろに再び現れる箇所が戻り読み、読了線より右の色付き部分が答案作成中の見返しです。一時停止中の時間は含みません。"}
         </p>
 
+        <Button
+          variant="secondary"
+          icon={BookOpen}
+          aria-expanded={showPassage}
+          onClick={openPassage}
+          className="self-start"
+        >
+          本文を見る
+        </Button>
+        {showPassage && (
+          <PassageSheet
+            layout={layout}
+            instruction={instruction}
+            colorOfParagraph={colorOfParagraph}
+            onClose={() => setShowPassage(false)}
+          />
+        )}
+
         {/* 第1問(B)の解答は対面で照合するので、記録していない */}
         {!insertion && (
-          <section className="flex flex-col gap-3">
+          <section
+            ref={answersRef}
+            className="flex scroll-mt-[50dvh] flex-col gap-3"
+          >
             <span className="text-[14px] font-semibold">解答</span>
             <div className="grid gap-4 sm:grid-cols-2">
               {slots.map((id, si) => {
@@ -690,7 +734,111 @@ export function CompareView({
           </section>
         )}
       </div>
+      {/* 解答がページの末尾にあると上半分まで送れないので、本文を開いている間だけ下に余白を足す */}
+      {showPassage && <div aria-hidden className="h-[50dvh]" />}
     </main>
+  );
+}
+
+/**
+ * 画面の上半分に重ねる本文。下半分の解答を見ながら読めるよう、背景は暗くせず操作も塞がない。
+ * 段落番号は帯と同じ段落の色で示し、棒がどの段落に当たるかを照らし合わせられるようにする
+ */
+function PassageSheet({
+  layout,
+  instruction,
+  colorOfParagraph,
+  onClose,
+}: {
+  layout: ProblemLayout;
+  instruction: string;
+  colorOfParagraph: (paragraphIndex: number) => string;
+  onClose: () => void;
+}) {
+  const [full, setFull] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <aside
+      aria-label="本文"
+      className={`fixed inset-x-3 top-3 z-30 mx-auto flex max-w-[1100px] transition-[height] duration-(--dur-base) ${full ? "h-[calc(100dvh-24px)]" : "h-[calc(50dvh-24px)]"} flex-col overflow-hidden rounded-(--radius-20) border-[1.5px] border-(--border-subtle) bg-(--surface-card) shadow-(--shadow-3) sm:inset-x-6`}
+    >
+      <div className="flex h-14 flex-none items-center gap-2 border-b-[1.5px] border-(--border-subtle) px-4 sm:px-6">
+        <BookOpen size={18} aria-hidden className="text-(--text-tertiary)" />
+        <span className="text-[15px] font-semibold">本文</span>
+        <IconButton
+          icon={full ? Minimize2 : Maximize2}
+          label={full ? "画面の半分に戻す" : "画面いっぱいに広げる"}
+          className="ml-auto"
+          onClick={() => setFull((v) => !v)}
+        />
+        <IconButton icon={X} label="本文を閉じる" onClick={onClose} />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+        <div className="mx-auto flex max-w-[820px] flex-col gap-4 py-5 pr-4 pl-10 sm:pr-8 sm:pl-14">
+          {instruction && (
+            <p className="m-0 text-[14px] whitespace-pre-line text-(--text-tertiary)">
+              {instruction}
+            </p>
+          )}
+          {layout.passage.map((para) =>
+            para.number === null ? (
+              <p
+                key={para.paragraphIndex}
+                className="m-0 text-center text-[16px] leading-[1.9] text-(--text-tertiary)"
+              >
+                {para.rows.map((s) => blankText(s.label)).join(" ")}
+              </p>
+            ) : (
+              <p
+                key={para.paragraphIndex}
+                className="relative m-0 text-[16px] leading-[1.9] text-pretty"
+              >
+                <span
+                  className="absolute top-0.5 -left-7 text-[13px] font-bold select-none sm:-left-9"
+                  style={{ color: colorOfParagraph(para.paragraphIndex) }}
+                >
+                  {para.number}
+                </span>
+                {para.rows.map((s) =>
+                  s.kind === "blank" ? (
+                    <span key={s.id} className="mr-1 text-(--text-tertiary)">
+                      {blankText(s.label)}
+                    </span>
+                  ) : (
+                    <span key={s.id} className="mr-1">
+                      {s.text}
+                    </span>
+                  ),
+                )}
+              </p>
+            ),
+          )}
+          {layout.choices.length > 0 && (
+            <div className="flex flex-col gap-2 border-t border-(--border-subtle) pt-4">
+              {layout.choices.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex gap-3 text-[15px] leading-[1.8]"
+                >
+                  {c.label && (
+                    <span className="flex-none font-semibold text-(--text-secondary)">
+                      {c.label})
+                    </span>
+                  )}
+                  <span className="whitespace-pre-line">{c.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>
   );
 }
 

@@ -49,6 +49,7 @@ export default async function ComparePage({
           key={problemId}
           problemId={problemId}
           kind={data.problem.kind}
+          instruction={data.problem.instruction}
           problemOptions={problems.map((p) => ({
             value: p.id,
             label: problemLabel(p),
