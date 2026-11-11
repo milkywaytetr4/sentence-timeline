@@ -242,8 +242,8 @@ export function ImportForm() {
             ))}
           </ol>
           <span className="text-[12px] font-medium text-(--text-tertiary)">
-            番号の順に本文として読み取ります（{images.length}/{MAX_IMAGES}
-            枚・合計 {(totalBytes / 1024 / 1024).toFixed(1)}MB / 4MB）
+            {images.length}/{MAX_IMAGES}枚・合計{" "}
+            {(totalBytes / 1024 / 1024).toFixed(1)}MB / 4MB
           </span>
         </div>
       )}
@@ -307,22 +307,16 @@ export function ImportForm() {
             <Button type="submit" size="lg" icon={ScanText} disabled={pending}>
               {pending ? "抽出しています…" : "本文を抽出する"}
             </Button>
-            <span className="text-[12px] font-medium text-(--text-tertiary)">
-              {pending
-                ? "1分ほどかかります。この画面のままお待ちください。"
-                : "抽出後、編集画面で文と段落の区切りを確認します。"}
-            </span>
+            {pending && (
+              <span className="text-[12px] font-medium text-(--text-tertiary)">
+                1分ほどかかります。この画面のままお待ちください。
+              </span>
+            )}
           </>
         ) : (
-          <>
-            <Button type="submit" size="lg" icon={FileText} disabled={pending}>
-              {pending ? "取り込んでいます…" : "本文を取り込む"}
-            </Button>
-            <span className="text-[12px] font-medium text-(--text-tertiary)">
-              LLM
-              を使わずに文へ分けます。取り込み後、編集画面で区切りを確認します。
-            </span>
-          </>
+          <Button type="submit" size="lg" icon={FileText} disabled={pending}>
+            {pending ? "取り込んでいます…" : "本文を取り込む"}
+          </Button>
         )}
       </div>
     </form>

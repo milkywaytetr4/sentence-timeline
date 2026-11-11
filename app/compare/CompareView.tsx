@@ -383,13 +383,11 @@ export function CompareView({
             <span className="text-[14px] font-semibold whitespace-nowrap">
               取り組み履歴
             </span>
-            <span
-              className={`text-[12px] font-medium ${editing !== null ? "text-(--sky-700)" : "text-(--text-tertiary)"}`}
-            >
-              {editing !== null
-                ? "入れる版を選んでください。"
-                : "帯の左の名前をタップすると、比較する版を入れ替えられます。"}
-            </span>
+            {editing !== null && (
+              <span className="text-[12px] font-medium text-(--sky-700)">
+                入れる版を選んでください。
+              </span>
+            )}
           </div>
           {attempts.length === 0 && (
             <p className="m-0 text-[14px] text-(--text-tertiary)">
@@ -687,9 +685,7 @@ export function CompareView({
         </div>
 
         <p className="m-0 text-[12px] font-medium text-(--text-tertiary)">
-          {insertion
-            ? "同じ段落の色が後ろに再び現れる箇所が戻り読み、灰色の濃淡の部分が選択肢を見ている時間です。一時停止中の時間は含みません。"
-            : "同じ段落の色が後ろに再び現れる箇所が戻り読み、読了線より右の色付き部分が答案作成中の見返しです。一時停止中の時間は含みません。"}
+          一時停止中の時間は含みません。
         </p>
 
         <Button
@@ -942,9 +938,11 @@ function AiAnswerCard({
           {a.aiAnswer}
         </p>
       ) : (
-        <p className="m-0 text-[14px] text-(--text-tertiary)">
-          {pending ? "改稿しています…" : "ボタンを押すと AI が改稿します。"}
-        </p>
+        pending && (
+          <p className="m-0 text-[14px] text-(--text-tertiary)">
+            改稿しています…
+          </p>
+        )
       )}
     </div>
   );

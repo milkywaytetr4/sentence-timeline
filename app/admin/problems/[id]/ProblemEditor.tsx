@@ -261,8 +261,7 @@ export function ProblemEditor({
             </div>
           ) : (
             <div className="px-2 text-[14px] text-(--text-secondary)">
-              {bodyParagraphs}段落 · {totalSentences}
-              文。分割は、分けたい位置にカーソルを置いてから押します。
+              {bodyParagraphs}段落 · {totalSentences}文
             </div>
           )}
 
@@ -434,19 +433,15 @@ export function ProblemEditor({
                   className="field h-auto! resize-y py-2.5! text-[15px] leading-[1.7]"
                 />
               </label>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  variant="secondary"
-                  icon={ClipboardPaste}
-                  onClick={append}
-                  disabled={!pasted.trim()}
-                >
-                  末尾に追加
-                </Button>
-                <span className="text-[12px] font-medium text-(--text-tertiary)">
-                  本文は選択肢の前に、選択肢は末尾に入ります。追加したあとで保存してください。
-                </span>
-              </div>
+              <Button
+                variant="secondary"
+                icon={ClipboardPaste}
+                onClick={append}
+                disabled={!pasted.trim()}
+                className="self-start"
+              >
+                末尾に追加
+              </Button>
             </div>
           )}
         </div>

@@ -6,7 +6,6 @@ import {
   CircleCheckBig,
   CirclePause,
   CloudOff,
-  Eye,
   Hand,
   ListChecks,
   Pause,
@@ -290,21 +289,11 @@ export function Recorder({
     mode === "answer"
       ? {
           icon: PencilLine,
-          text: "紙に答案を書いています。見返すときは文をタップします。",
+          text: "見返すときは文をタップします。",
         }
-      : mode === "review"
-        ? {
-            icon: Eye,
-            text: "見返し中。同じ文か、文以外の場所をタップすると答案作成に戻ります。",
-          }
-        : mode === "reading" && !state.focusedId
-          ? {
-              icon: Hand,
-              text: insertion
-                ? "読み始める文をタップしてください。選択肢は「選択肢」ボタンで開きます。"
-                : "読み始める文をタップしてください。計測は文ごとに行います。",
-            }
-          : null;
+      : mode === "reading" && !state.focusedId
+        ? { icon: Hand, text: "読み始める文をタップしてください。" }
+        : null;
 
   const highlight = (id: string): CSSProperties | undefined => {
     const isCur = id === state.focusedId;
