@@ -6,7 +6,7 @@ import { questionRow, questionsError } from "@/lib/domain/question";
 import { countWords, normalizeLines, normalizeSpaces } from "@/lib/domain/text";
 import type { Question, Sentence } from "@/lib/domain/types";
 import { requireTeacher } from "@/lib/server/auth";
-import { db } from "@/lib/server/db";
+import { db, IMAGE_BUCKET } from "@/lib/server/db";
 import {
   getProblemWithSentences,
   listQuestions,
@@ -159,4 +159,38 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
     sentences: fresh?.sentences ?? [],
     questions: freshQuestions,
   };
+}
+
+/**
+ * 問題を、文・小問・取り組みの記録ごと削除する。
+ * 取り込み元の画像も、どこからも参照されなくなるので消す。
+ */
+export async function deleteProblem(
+  problemId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireTeacher();
+  const id = z.uuid().parse(problemId);
+  const { data, error } = await db().rpc("delete_problem", {
+    p_problem_id: id,
+  });
+  if (error) {
+    console.error("delete problem failed", error);
+    return { ok: false, error: "問題を削除できませんでした。" };
+  }
+
+  // 以前の PDF の取り込み分は別のバケットにあり、ここでは一覧が空になるので消さない
+  const folder = data as string | null;
+  if (folder) {
+    const storage = db().storage.from(IMAGE_BUCKET);
+    const { data: files } = await storage.list(folder);
+    const paths = (files ?? []).map((f) => `${folder}/${f.name}`);
+    // 画像が残っても問題の削除は済んでいるので、失敗は記録だけにして画面は進める
+    const { error: removeError } =
+      paths.length > 0 ? await storage.remove(paths) : { error: null };
+    if (removeError) console.error("remove images failed", removeError);
+  }
+
+  revalidatePath("/");
+  revalidatePath("/compare");
+  return { ok: true };
 }

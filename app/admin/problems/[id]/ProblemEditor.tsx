@@ -14,8 +14,15 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { Badge, Button, IconButton, TopBar } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  IconButton,
+  TopBar,
+} from "@/components/ui";
 import {
   appendParagraphs,
   type EditParagraph,
@@ -40,7 +47,7 @@ import {
   type QuestionKind,
   type Sentence,
 } from "@/lib/domain/types";
-import { saveProblem } from "./actions";
+import { deleteProblem, saveProblem } from "./actions";
 
 let keySeq = 0;
 const newKey = () => `k${++keySeq}`;
@@ -104,6 +111,9 @@ export function ProblemEditor({
   } | null>(null);
   const [pending, startTransition] = useTransition();
   const [pasted, setPasted] = useState("");
+  const router = useRouter();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, startDeleting] = useTransition();
   const textareas = useRef(new Map<string, HTMLTextAreaElement>());
 
   const change = (next: EditParagraph[]) => {
@@ -182,6 +192,18 @@ export function ProblemEditor({
     });
   };
 
+  const remove = () => {
+    startDeleting(async () => {
+      const res = await deleteProblem(problem.id);
+      if (res.ok) {
+        router.push("/");
+        return;
+      }
+      setConfirmDelete(false);
+      setMessage({ tone: "error", text: res.error });
+    });
+  };
+
   const bodyRows = paras.flatMap((p) =>
     p.rows.filter((r) => r.kind === "sentence"),
   );
@@ -200,7 +222,7 @@ export function ProblemEditor({
   });
 
   return (
-    <div className="dot-bg flex h-dvh flex-col">
+    <div className="dot-bg relative flex h-dvh flex-col">
       <TopBar>
         <Link
           href="/"
@@ -231,6 +253,12 @@ export function ProblemEditor({
               {message.text}
             </output>
           )}
+          <IconButton
+            icon={Trash2}
+            label="この問題を削除"
+            onClick={() => setConfirmDelete(true)}
+            disabled={deleting}
+          />
           <Button icon={Save} onClick={save} disabled={pending || !dirty}>
             {pending ? "保存しています…" : "保存する"}
           </Button>
@@ -609,6 +637,24 @@ export function ProblemEditor({
           )}
         </div>
       </main>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          icon={Trash2}
+          iconColor="var(--red-500)"
+          title="問題を削除しますか"
+          body={
+            locked
+              ? "この問題の取り組みの記録もすべて削除されます。元に戻せません。"
+              : "元に戻せません。"
+          }
+          okLabel={deleting ? "削除しています…" : "削除する"}
+          okVariant="danger"
+          okDisabled={deleting}
+          onOk={remove}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 }
