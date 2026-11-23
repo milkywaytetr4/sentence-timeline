@@ -1,18 +1,21 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronLeft,
   ClipboardPaste,
   Lock,
   Merge,
   Pilcrow,
+  Plus,
   Save,
   Split,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
-import { Badge, Button, TopBar } from "@/components/ui";
+import { Badge, Button, IconButton, TopBar } from "@/components/ui";
 import {
   appendParagraphs,
   type EditParagraph,
@@ -27,10 +30,14 @@ import {
 } from "@/lib/domain/editing";
 import { blankText, choiceName } from "@/lib/domain/layout";
 import { parsePassageText } from "@/lib/domain/passage";
+import { splitWords } from "@/lib/domain/question";
 import { detectSplitWarning, splitWarningMessage } from "@/lib/domain/text";
 import {
   PROBLEM_KIND_LABEL,
   type Problem,
+  QUESTION_KIND_LABEL,
+  type Question,
+  type QuestionKind,
   type Sentence,
 } from "@/lib/domain/types";
 import { saveProblem } from "./actions";
@@ -38,14 +45,44 @@ import { saveProblem } from "./actions";
 let keySeq = 0;
 const newKey = () => `k${++keySeq}`;
 
+/** 語群は空白区切りの1行で編集し、保存するときに1語ずつに分ける */
+type EditQuestion = {
+  key: string;
+  kind: QuestionKind;
+  label: string;
+  instruction: string;
+  words: string;
+};
+
+const toEditQuestions = (questions: readonly Question[]): EditQuestion[] =>
+  questions.map((q) => ({
+    key: newKey(),
+    kind: q.kind,
+    label: q.label,
+    instruction: q.instruction,
+    words: q.kind === "word_order" ? q.words.join(" ") : "",
+  }));
+
+const fromEditQuestion = ({
+  kind,
+  label,
+  instruction,
+  words,
+}: EditQuestion): Question =>
+  kind === "word_order"
+    ? { kind, label, instruction, words: splitWords(words) }
+    : { kind, label, instruction };
+
 export function ProblemEditor({
   problem,
   sentences,
+  questions: initialQuestions,
   locked,
   truncated,
 }: {
   problem: Problem;
   sentences: Sentence[];
+  questions: Question[];
   locked: boolean;
   /** 抽出がコンテンツフィルターで打ち切られ、途中までしか取り込めていない */
   truncated: boolean;
@@ -57,6 +94,9 @@ export function ProblemEditor({
   const [year, setYear] = useState(problem.year);
   const [questionNo, setQuestionNo] = useState(problem.questionNo);
   const [instruction, setInstruction] = useState(problem.instruction);
+  const [questions, setQuestions] = useState(() =>
+    toEditQuestions(initialQuestions),
+  );
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<{
     tone: "ok" | "error";
@@ -70,6 +110,23 @@ export function ProblemEditor({
     setParas(next);
     setDirty(true);
     setMessage(null);
+  };
+
+  const changeQuestions = (next: EditQuestion[]) => {
+    setQuestions(next);
+    setDirty(true);
+    setMessage(null);
+  };
+
+  const updateQuestion = (i: number, patch: Partial<EditQuestion>) =>
+    changeQuestions(
+      questions.map((q, j) => (j === i ? { ...q, ...patch } : q)),
+    );
+
+  const moveQuestion = (i: number, by: -1 | 1) => {
+    const next = [...questions];
+    [next[i], next[i + by]] = [next[i + by], next[i]];
+    changeQuestions(next);
   };
 
   const split = (pi: number, si: number, key: string) => {
@@ -112,9 +169,11 @@ export function ProblemEditor({
             text: r.text,
           })),
         })),
+        questions: questions.map(fromEditQuestion),
       });
       if (res.ok) {
         setParas(fromSentences(res.sentences, newKey));
+        setQuestions(toEditQuestions(res.questions));
         setDirty(false);
         setMessage({ tone: "ok", text: "保存しました。" });
       } else {
@@ -442,6 +501,110 @@ export function ProblemEditor({
               >
                 末尾に追加
               </Button>
+            </div>
+          )}
+
+          {problem.kind !== "summary" && (
+            <div className="frame flex flex-col gap-3 px-3 pt-4 pb-5 sm:px-6">
+              <div className="flex items-center gap-3">
+                <h2 className="m-0 text-[14px] font-semibold whitespace-nowrap">
+                  小問
+                </h2>
+                <span className="h-[1.5px] flex-1 bg-(--border-subtle)" />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={Plus}
+                  onClick={() =>
+                    changeQuestions([
+                      ...questions,
+                      {
+                        key: newKey(),
+                        kind: "word_order",
+                        label: "",
+                        instruction: "",
+                        words: "",
+                      },
+                    ])
+                  }
+                >
+                  並べ替えを追加
+                </Button>
+              </div>
+              {questions.map((q, i) => (
+                <div
+                  key={q.key}
+                  className="flex flex-col gap-2.5 rounded-(--radius-16) border-[1.5px] border-(--ink-100) bg-(--surface-card) px-3 py-3"
+                >
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Badge tone="neutral" size="sm">
+                      {QUESTION_KIND_LABEL[q.kind]}
+                    </Badge>
+                    <label className="flex items-center gap-1.5 text-[12px] font-medium text-(--text-secondary)">
+                      記号
+                      <input
+                        className="field h-8! w-16 px-2!"
+                        value={q.label}
+                        onChange={(e) =>
+                          updateQuestion(i, { label: e.target.value })
+                        }
+                      />
+                    </label>
+                    <div className="ml-auto flex gap-1">
+                      <IconButton
+                        icon={ArrowUp}
+                        label="上へ"
+                        disabled={i === 0}
+                        onClick={() => moveQuestion(i, -1)}
+                      />
+                      <IconButton
+                        icon={ArrowDown}
+                        label="下へ"
+                        disabled={i === questions.length - 1}
+                        onClick={() => moveQuestion(i, 1)}
+                      />
+                      {/* 挿入の小問は選択肢の設問文の置き場なので、挿入問題から外せないようにする */}
+                      {q.kind !== "insertion" && (
+                        <IconButton
+                          icon={Trash2}
+                          label="この小問を削除"
+                          onClick={() =>
+                            changeQuestions(questions.filter((_, j) => j !== i))
+                          }
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <label className="flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary)">
+                    設問文
+                    <textarea
+                      className="field h-auto! resize-y py-2.5! leading-[1.7]"
+                      rows={2}
+                      value={q.instruction}
+                      placeholder={
+                        q.kind === "insertion"
+                          ? "選択肢の直前に印刷されている設問文。本文の前の設問文にまとめて書かれているときは空のままにします。"
+                          : undefined
+                      }
+                      onChange={(e) =>
+                        updateQuestion(i, { instruction: e.target.value })
+                      }
+                    />
+                  </label>
+                  {q.kind === "word_order" && (
+                    <label className="flex flex-col gap-1.5 text-[12px] font-medium text-(--text-secondary)">
+                      語群（空白区切り）
+                      <input
+                        className="field"
+                        value={q.words}
+                        onChange={(e) =>
+                          updateQuestion(i, { words: e.target.value })
+                        }
+                      />
+                    </label>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

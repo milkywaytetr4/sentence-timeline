@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/server/auth";
 import {
   getAttemptWithEvents,
   getProblemWithSentences,
+  listQuestions,
 } from "@/lib/server/queries";
 import { Recorder } from "./Recorder";
 
@@ -20,7 +21,10 @@ export default async function AttemptPage({
     redirect(`/compare?problem=${attempt.problemId}&a=${attempt.id}`);
   }
 
-  const data = await getProblemWithSentences(attempt.problemId);
+  const [data, questions] = await Promise.all([
+    getProblemWithSentences(attempt.problemId),
+    listQuestions(attempt.problemId),
+  ]);
   if (!data) notFound();
 
   return (
@@ -32,6 +36,7 @@ export default async function AttemptPage({
       kind={data.problem.kind}
       instruction={data.problem.instruction}
       sentences={data.sentences}
+      questions={questions}
       initialEvents={attempt.events}
       initialAnswer={attempt.answer}
     />

@@ -59,6 +59,24 @@ export type Sentence = {
   wordCount: number;
 };
 
+/**
+ * 本文の後ろに印刷されている小問。計測はしない
+ * - insertion: 空所に段落・文を入れる小問。選択肢は Sentence（kind = "choice"）として持つ
+ * - word_order: 語の並べ替え
+ */
+export type QuestionKind = "insertion" | "word_order";
+
+export const QUESTION_KIND_LABEL: Record<QuestionKind, string> = {
+  insertion: "挿入",
+  word_order: "並べ替え",
+};
+
+export type Question = {
+  /** 「ア」のような記号。括弧は含めない。無ければ空文字 */
+  label: string;
+  instruction: string;
+} & ({ kind: "insertion" } | { kind: "word_order"; words: string[] });
+
 export type Problem = {
   id: string;
   title: string;

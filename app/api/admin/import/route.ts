@@ -6,6 +6,7 @@ import {
   MAX_TOTAL_IMAGE_BYTES,
 } from "@/lib/domain/image";
 import { parsePassageText } from "@/lib/domain/passage";
+import { defaultQuestions, questionRow } from "@/lib/domain/question";
 import { countWords } from "@/lib/domain/text";
 import { getRole } from "@/lib/server/auth";
 import { db, IMAGE_BUCKET } from "@/lib/server/db";
@@ -69,9 +70,11 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    // 小問の設問文と語群は、貼り付けた文面からは本文と確実に見分けられないので、編集画面で入力してもらう
     return saveImported(meta.data, null, {
       instruction: "",
       paragraphs,
+      questions: defaultQuestions(meta.data.kind),
       truncated: false,
     });
   }
@@ -185,6 +188,7 @@ async function saveImported(
     // 要約問題で読み取れなかったときは null にして、列の既定値（要約問題の文言）を入れる
     p_instruction: passage.instruction || (meta.kind === "summary" ? null : ""),
     p_kind: meta.kind,
+    p_questions: passage.questions.map(questionRow),
   });
   if (error) {
     console.error("save_problem failed", error);

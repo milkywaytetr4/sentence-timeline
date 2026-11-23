@@ -31,6 +31,7 @@ import { useToast } from "@/components/Toast";
 import { Badge, Button, ConfirmDialog, IconButton } from "@/components/ui";
 import { loadQueue, useEventSync } from "@/lib/client/useEventSync";
 import { blankText, layoutProblem } from "@/lib/domain/layout";
+import { ensureOneInsertion, questionText } from "@/lib/domain/question";
 import { countChars } from "@/lib/domain/text";
 import {
   buildTimeline,
@@ -42,6 +43,7 @@ import {
 import type {
   EventType,
   ProblemKind,
+  Question,
   Sentence,
   StoredEvent,
   TimelineEvent,
@@ -89,6 +91,7 @@ type Props = {
   kind: ProblemKind;
   instruction: string;
   sentences: Sentence[];
+  questions: Question[];
   initialEvents: StoredEvent[];
   initialAnswer: string | null;
 };
@@ -101,6 +104,7 @@ export function Recorder({
   kind,
   instruction,
   sentences,
+  questions,
   initialEvents,
   initialAnswer,
 }: Props) {
@@ -508,7 +512,7 @@ export function Recorder({
               className="shadow-(--shadow-float)"
               onClick={() => setShowChoices((v) => !v)}
             >
-              選択肢
+              設問
             </Button>
           )}
           {mode === "reading" && !insertion && (
@@ -598,7 +602,8 @@ export function Recorder({
       )}
 
       {insertion && showChoices && measuring && (
-        <ChoicesPanel
+        <QuestionsPanel
+          questions={questions}
           choices={layout.choices}
           tapHandlers={tapHandlers}
           highlight={highlight}
@@ -638,16 +643,19 @@ type TapHandlers = {
 };
 
 /**
- * 本文の右に重ねて出す選択肢の一覧。閉じても記録は変えず、次に文をタップするまで
- * 選択肢を見ていたものとして扱う（読解中に文から文へ移るときと同じ扱い）
+ * 本文の右に重ねて出す設問。小問を出題の順に並べ、挿入の小問の設問文の後ろに選択肢を出す。
+ * 選択肢はタップで見ている時間を記録し、それ以外の小問は計測しないのでタップできない静的な文にする。
+ * 閉じても記録は変えず、次に文をタップするまで選択肢を見ていたものとして扱う（読解中に文から文へ移るときと同じ扱い）
  */
-function ChoicesPanel({
+function QuestionsPanel({
+  questions,
   choices,
   tapHandlers,
   highlight,
   headerShown,
   onClose,
 }: {
+  questions: Question[];
   choices: Sentence[];
   tapHandlers: (id: string) => TapHandlers;
   highlight: (id: string) => CSSProperties | undefined;
@@ -656,43 +664,81 @@ function ChoicesPanel({
 }) {
   return (
     <aside
-      aria-label="選択肢"
+      aria-label="設問"
       className={`absolute right-0 bottom-0 z-10 flex w-full max-w-[520px] flex-col border-l-[1.5px] border-(--border-subtle) bg-(--surface-card) shadow-(--shadow-3) transition-[top] duration-(--dur-base) ${headerShown ? "top-16" : "top-0"}`}
     >
       <div className="flex h-14 flex-none items-center gap-2 border-b-[1.5px] border-(--border-subtle) px-4">
         <ListChecks size={18} aria-hidden className="text-(--text-tertiary)" />
-        <span className="text-[15px] font-semibold">選択肢</span>
+        <span className="text-[15px] font-semibold">設問</span>
         <IconButton
           icon={X}
-          label="選択肢を閉じる"
+          label="設問を閉じる"
           className="ml-auto"
           onClick={onClose}
         />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4 pb-28">
-        {choices.length === 0 && (
-          <p className="m-0 text-[14px] text-(--text-tertiary)">
-            選択肢が登録されていません。
-          </p>
-        )}
-        {choices.map((c) => (
-          <div
-            key={c.id}
-            {...tapHandlers(c.id)}
-            className="flex cursor-pointer gap-3 rounded-(--radius-12) border-[1.5px] border-(--border-subtle) px-4 py-3 text-[17px] leading-[1.9] transition-[background] duration-(--dur-fast) outline-none focus-visible:outline-2 focus-visible:outline-(--sky-400)"
-            style={highlight(c.id)}
-          >
-            {c.label && (
-              <span className="flex-none font-semibold text-(--text-secondary)">
-                {c.label})
-              </span>
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto p-4 pb-28">
+        {/* 挿入の小問がない古いデータでも、選択肢は必ず出す */}
+        {ensureOneInsertion(questions).map((q, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: 小問は画面の中で並び替えない
+          <section key={i} className="flex flex-col gap-3">
+            {q.instruction && (
+              <p className="m-0 text-[14px] leading-[1.8] whitespace-pre-line text-(--text-tertiary)">
+                {questionText(q)}
+              </p>
             )}
-            <span className="whitespace-pre-line">{c.text}</span>
-          </div>
+            {q.kind === "word_order" ? (
+              <p className="m-0 flex flex-wrap gap-x-5 gap-y-1 px-4 text-[17px] leading-[1.9]">
+                {q.words.map((w, j) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: 同じ語が2回出ることがある
+                  <span key={j}>{w}</span>
+                ))}
+              </p>
+            ) : (
+              <ChoiceList
+                choices={choices}
+                tapHandlers={tapHandlers}
+                highlight={highlight}
+              />
+            )}
+          </section>
         ))}
       </div>
     </aside>
   );
+}
+
+function ChoiceList({
+  choices,
+  tapHandlers,
+  highlight,
+}: {
+  choices: Sentence[];
+  tapHandlers: (id: string) => TapHandlers;
+  highlight: (id: string) => CSSProperties | undefined;
+}) {
+  if (choices.length === 0) {
+    return (
+      <p className="m-0 text-[14px] text-(--text-tertiary)">
+        選択肢が登録されていません。
+      </p>
+    );
+  }
+  return choices.map((c) => (
+    <div
+      key={c.id}
+      {...tapHandlers(c.id)}
+      className="flex cursor-pointer gap-3 rounded-(--radius-12) border-[1.5px] border-(--border-subtle) px-4 py-3 text-[17px] leading-[1.9] transition-[background] duration-(--dur-fast) outline-none focus-visible:outline-2 focus-visible:outline-(--sky-400)"
+      style={highlight(c.id)}
+    >
+      {c.label && (
+        <span className="flex-none font-semibold text-(--text-secondary)">
+          {c.label})
+        </span>
+      )}
+      <span className="whitespace-pre-line">{c.text}</span>
+    </div>
+  ));
 }
 
 function SyncIndicator({

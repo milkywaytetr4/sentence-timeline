@@ -1,10 +1,12 @@
 import "server-only";
+import { z } from "zod";
 import type {
   Attempt,
   AttemptStatus,
   EventType,
   Problem,
   ProblemKind,
+  Question,
   Role,
   Sentence,
   SentenceKind,
@@ -30,6 +32,19 @@ type SentenceRow = {
   text: string;
   word_count: number;
 };
+
+const questionHead = { label: z.string(), instruction: z.string() };
+const questionRowSchema = z.discriminatedUnion("kind", [
+  z.object({ ...questionHead, kind: z.literal("insertion") }),
+  z
+    .object({
+      ...questionHead,
+      kind: z.literal("word_order"),
+      data: z.object({ words: z.array(z.string()) }),
+    })
+    .transform(({ data, ...q }): Question => ({ ...q, words: data.words })),
+]);
+
 type AttemptRow = {
   id: string;
   problem_id: string;
@@ -167,6 +182,17 @@ export async function getProblemWithSentences(
     problem: toProblem(row),
     sentences: row.sentences.map(toSentence).sort(sortSentences),
   };
+}
+
+/** 小問を出題の順に返す。data 列の形は種類ごとに違うので、ここで検証してから型に合わせる */
+export async function listQuestions(problemId: string): Promise<Question[]> {
+  const { data, error } = await db()
+    .from("questions")
+    .select("label, kind, instruction, data")
+    .eq("problem_id", problemId)
+    .order("position");
+  if (error) throw error;
+  return z.array(questionRowSchema).parse(data);
 }
 
 export async function getAttemptWithEvents(

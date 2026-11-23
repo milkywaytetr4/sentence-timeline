@@ -2,14 +2,21 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { questionRow, questionsError } from "@/lib/domain/question";
 import { countWords, normalizeLines, normalizeSpaces } from "@/lib/domain/text";
-import type { Sentence } from "@/lib/domain/types";
+import type { Question, Sentence } from "@/lib/domain/types";
 import { requireTeacher } from "@/lib/server/auth";
 import { db } from "@/lib/server/db";
 import {
   getProblemWithSentences,
+  listQuestions,
   problemHasAttempts,
 } from "@/lib/server/queries";
+
+const questionHead = {
+  label: z.string().trim().max(10),
+  instruction: z.string().trim().max(1000),
+};
 
 const saveSchema = z.object({
   problemId: z.uuid(),
@@ -53,11 +60,23 @@ const saveSchema = z.object({
       }),
     )
     .min(1, "本文がありません"),
+  questions: z.array(
+    z.discriminatedUnion("kind", [
+      z.object({ ...questionHead, kind: z.literal("insertion") }),
+      z.object({
+        ...questionHead,
+        kind: z.literal("word_order"),
+        words: z
+          .array(z.string())
+          .transform((ws) => ws.map(normalizeSpaces).filter(Boolean)),
+      }),
+    ]),
+  ),
 });
 
 export type SaveInput = z.input<typeof saveSchema>;
 export type SaveResult =
-  | { ok: true; sentences: Sentence[] }
+  | { ok: true; sentences: Sentence[]; questions: Question[] }
   | { ok: false; error: string };
 
 export async function saveProblem(input: SaveInput): Promise<SaveResult> {
@@ -69,8 +88,20 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
       error: parsed.error.issues[0]?.message ?? "入力が不正です。",
     };
   }
-  const { problemId, title, year, questionNo, instruction, paragraphs } =
-    parsed.data;
+  const {
+    problemId,
+    title,
+    year,
+    questionNo,
+    instruction,
+    paragraphs,
+    questions,
+  } = parsed.data;
+
+  const current = await getProblemWithSentences(problemId);
+  if (!current) return { ok: false, error: "問題が見つかりません。" };
+  const invalid = questionsError(current.problem.kind, questions);
+  if (invalid) return { ok: false, error: invalid };
 
   const rows = paragraphs.flatMap((p, pi) =>
     p.sentences.map((s, si) => ({
@@ -84,11 +115,10 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
     })),
   );
 
-  // 記録がある問題では、文の結合・分割・段落の変更をすると過去のタイムラインが崩れるので、文面の修正だけを許す
+  // 記録がある問題では、文の結合・分割・段落の変更をすると過去のタイムラインが崩れるので、文面の修正だけを許す。
+  // 小問は計測しないので、記録があっても変えてよい
   if (await problemHasAttempts(problemId)) {
-    const current = await getProblemWithSentences(problemId);
     const same =
-      current !== null &&
       current.sentences.length === rows.length &&
       current.sentences.every(
         (s, i) =>
@@ -112,6 +142,7 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
     p_source_path: null,
     p_sentences: rows,
     p_instruction: instruction,
+    p_questions: questions.map(questionRow),
   });
   if (error) {
     console.error("save_problem failed", error);
@@ -119,6 +150,13 @@ export async function saveProblem(input: SaveInput): Promise<SaveResult> {
   }
 
   revalidatePath("/");
-  const fresh = await getProblemWithSentences(problemId);
-  return { ok: true, sentences: fresh?.sentences ?? [] };
+  const [fresh, freshQuestions] = await Promise.all([
+    getProblemWithSentences(problemId),
+    listQuestions(problemId),
+  ]);
+  return {
+    ok: true,
+    sentences: fresh?.sentences ?? [],
+    questions: freshQuestions,
+  };
 }
