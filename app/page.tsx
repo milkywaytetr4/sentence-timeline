@@ -2,11 +2,12 @@ import {
   ChartNoAxesGantt,
   Pencil,
   Settings,
+  ShieldCheck,
   Square,
   SquareCheckBig,
 } from "lucide-react";
 import Link from "next/link";
-import { TopBar } from "@/components/ui";
+import { Badge, TopBar } from "@/components/ui";
 import { formatDate } from "@/lib/domain/format";
 import { buildTimeline, formatClock } from "@/lib/domain/timeline";
 import {
@@ -118,6 +119,20 @@ export default async function HomePage() {
                   >
                     <Pencil size={18} aria-hidden />
                     編集
+                  </Link>
+                )}
+                {role === "teacher" && (
+                  <Link
+                    href={`/admin/problems/${p.id}/blessing`}
+                    className="inline-flex h-[52px] items-center gap-1.5 rounded-full px-4 text-[15px] font-semibold text-(--text-secondary) hover:bg-(--surface-chip) hover:no-underline"
+                  >
+                    <ShieldCheck size={18} aria-hidden />
+                    加護
+                    {p.blessingEnabled && (
+                      <Badge tone="violet" size="sm">
+                        オン
+                      </Badge>
+                    )}
                   </Link>
                 )}
                 <Link

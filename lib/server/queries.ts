@@ -21,6 +21,7 @@ type ProblemRow = {
   question_no: string;
   kind: ProblemKind;
   instruction: string;
+  blessing_enabled: boolean;
   created_at: string;
 };
 type SentenceRow = {
@@ -31,6 +32,7 @@ type SentenceRow = {
   label: string | null;
   text: string;
   word_count: number;
+  skimmable: boolean;
 };
 
 const questionHead = { label: z.string(), instruction: z.string() };
@@ -55,6 +57,7 @@ type AttemptRow = {
   finished_at: string | null;
   answer: string | null;
   ai_answer: string | null;
+  blessed: boolean;
 };
 type EventRow = {
   id: string;
@@ -72,6 +75,7 @@ const toProblem = (r: ProblemRow): Problem => ({
   questionNo: r.question_no,
   kind: r.kind,
   instruction: r.instruction,
+  blessingEnabled: r.blessing_enabled,
   createdAt: r.created_at,
 });
 
@@ -83,6 +87,7 @@ const toSentence = (r: SentenceRow): Sentence => ({
   label: r.label,
   text: r.text,
   wordCount: r.word_count,
+  skimmable: r.skimmable,
 });
 
 const sortSentences = (a: Sentence, b: Sentence) =>
@@ -98,6 +103,7 @@ const toAttempt = (r: AttemptRow): Attempt => ({
   finishedAt: r.finished_at,
   answer: r.answer,
   aiAnswer: r.ai_answer,
+  blessed: r.blessed,
 });
 
 const toEvent = (r: EventRow): StoredEvent => ({
@@ -118,7 +124,7 @@ export type ProblemSummary = Problem & {
 };
 
 const ATTEMPT_WITH_EVENTS =
-  "id, problem_id, role, attempt_no, status, started_at, finished_at, answer, ai_answer, events(id, seq, type, sentence_id, client_ts, voided)";
+  "id, problem_id, role, attempt_no, status, started_at, finished_at, answer, ai_answer, blessed, events(id, seq, type, sentence_id, client_ts, voided)";
 
 function toAttemptWithEvents(
   r: AttemptRow & { events: EventRow[] },
@@ -136,7 +142,7 @@ export async function listProblems(): Promise<ProblemSummary[]> {
   const { data, error } = await db()
     .from("problems")
     .select(
-      `id, title, year, question_no, kind, instruction, created_at, sentences(paragraph_index, kind), attempts(${ATTEMPT_WITH_EVENTS})`,
+      `id, title, year, question_no, kind, instruction, blessing_enabled, created_at, sentences(paragraph_index, kind), attempts(${ATTEMPT_WITH_EVENTS})`,
     )
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -159,7 +165,9 @@ export async function listProblems(): Promise<ProblemSummary[]> {
 export async function listProblemHeads(): Promise<Problem[]> {
   const { data, error } = await db()
     .from("problems")
-    .select("id, title, year, question_no, kind, instruction, created_at")
+    .select(
+      "id, title, year, question_no, kind, instruction, blessing_enabled, created_at",
+    )
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data as ProblemRow[]).map(toProblem);
@@ -171,7 +179,7 @@ export async function getProblemWithSentences(
   const { data, error } = await db()
     .from("problems")
     .select(
-      "id, title, year, question_no, kind, instruction, created_at, sentences(id, paragraph_index, sentence_index, kind, label, text, word_count)",
+      "id, title, year, question_no, kind, instruction, blessing_enabled, created_at, sentences(id, paragraph_index, sentence_index, kind, label, text, word_count, skimmable)",
     )
     .eq("id", id)
     .maybeSingle();

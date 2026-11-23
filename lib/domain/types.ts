@@ -57,6 +57,8 @@ export type Sentence = {
   label: string | null;
   text: string;
   wordCount: number;
+  /** 流し読みしてよい文（加護）。本文の文にだけ立つ */
+  skimmable: boolean;
 };
 
 /**
@@ -85,6 +87,8 @@ export type Problem = {
   kind: ProblemKind;
   /** 計測画面で本文の上に出す設問文 */
   instruction: string;
+  /** これ以降に始める取り組みを加護ありにするか */
+  blessingEnabled: boolean;
   createdAt: string;
 };
 
@@ -100,6 +104,8 @@ export type Attempt = {
   answer: string | null;
   /** 解答の書き口を残して LLM が改稿した解答。改稿していなければ null */
   aiAnswer: string | null;
+  /** 加護ありで取り組んだか。開始の時点で決まる */
+  blessed: boolean;
 };
 
 /** 大問番号「1(A)」を「第1問(A)」の形にして、年度・タイトルと並べる */

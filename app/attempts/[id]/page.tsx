@@ -39,6 +39,7 @@ export default async function AttemptPage({
       questions={questions}
       initialEvents={attempt.events}
       initialAnswer={attempt.answer}
+      blessed={attempt.blessed}
     />
   );
 }

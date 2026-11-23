@@ -14,7 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useToast } from "@/components/Toast";
-import { Button, IconButton, Select, Tabs } from "@/components/ui";
+import { Badge, Button, IconButton, Select, Tabs } from "@/components/ui";
 import { formatDate } from "@/lib/domain/format";
 import {
   blankText,
@@ -421,8 +421,9 @@ export function CompareView({
                               editing !== null ? "var(--shadow-2)" : "none",
                           }}
                         >
-                          <span className="text-[15px] leading-[1.3] font-semibold whitespace-nowrap">
+                          <span className="flex items-center gap-1.5 text-[15px] leading-[1.3] font-semibold whitespace-nowrap">
                             {a.attemptNo}回目
+                            {a.blessed && <BlessedBadge />}
                           </span>
                           <span className="text-[12px] font-medium whitespace-nowrap text-(--text-tertiary) tabular-nums">
                             {formatDate(a.startedAt)} ·{" "}
@@ -524,6 +525,11 @@ export function CompareView({
                       <span className="text-[12px] font-medium text-(--text-tertiary)">
                         {a ? formatDate(a.startedAt) : ""}
                       </span>
+                      {a?.blessed && (
+                        <span className="self-start">
+                          <BlessedBadge />
+                        </span>
+                      )}
                     </span>
                     <ChevronsUpDown
                       size={16}
@@ -838,6 +844,15 @@ function PassageSheet({
   );
 }
 
+/** 加護なしの取り組みが普段の姿なので、加護ありのときだけ印を出す */
+function BlessedBadge() {
+  return (
+    <Badge tone="violet" size="sm">
+      加護あり
+    </Badge>
+  );
+}
+
 /** 帯と同じ順に並べ、帯の色の枠でどの版の解答かを示す */
 function AnswerCard({
   attempt: a,
@@ -853,12 +868,13 @@ function AnswerCard({
     >
       <div className="flex items-baseline justify-between gap-3">
         <span
-          className="text-[15px] font-bold"
+          className="flex items-center gap-1.5 text-[15px] font-bold"
           style={{
             color: a ? "var(--text-primary)" : "var(--text-tertiary)",
           }}
         >
           {a ? attemptLabel(a) : "未選択"}
+          {a?.blessed && <BlessedBadge />}
         </span>
         {a?.answer && (
           <span className="text-[12px] font-medium text-(--text-tertiary) tabular-nums">

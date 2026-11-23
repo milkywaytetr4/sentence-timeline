@@ -64,6 +64,7 @@ describe("fromSentences", () => {
           label: null,
           text: "A.",
           wordCount: 1,
+          skimmable: false,
         },
         {
           id: "b",
@@ -73,6 +74,7 @@ describe("fromSentences", () => {
           label: null,
           text: "B.",
           wordCount: 1,
+          skimmable: false,
         },
         {
           id: "c",
@@ -82,6 +84,7 @@ describe("fromSentences", () => {
           label: null,
           text: "C.",
           wordCount: 1,
+          skimmable: false,
         },
       ],
       newKey,

@@ -27,6 +27,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SKIM_CLASS } from "@/components/blessing";
 import { useToast } from "@/components/Toast";
 import { Badge, Button, ConfirmDialog, IconButton } from "@/components/ui";
 import { loadQueue, useEventSync } from "@/lib/client/useEventSync";
@@ -94,6 +95,8 @@ type Props = {
   questions: Question[];
   initialEvents: StoredEvent[];
   initialAnswer: string | null;
+  /** 加護ありなら、流し読みしてよい文を区別して出す */
+  blessed: boolean;
 };
 
 export function Recorder({
@@ -107,6 +110,7 @@ export function Recorder({
   questions,
   initialEvents,
   initialAnswer,
+  blessed,
 }: Props) {
   const router = useRouter();
   const showToast = useToast();
@@ -433,7 +437,7 @@ export function Recorder({
                       <span
                         key={s.id}
                         {...tapHandlers(s.id)}
-                        className="mr-1 cursor-pointer rounded-(--radius-6) px-1 py-1.5 [box-decoration-break:clone] transition-[background] duration-(--dur-fast) outline-none focus-visible:outline-2 focus-visible:outline-(--sky-400)"
+                        className={`mr-1 cursor-pointer rounded-(--radius-6) px-1 py-1.5 [box-decoration-break:clone] transition-[background] duration-(--dur-fast) outline-none focus-visible:outline-2 focus-visible:outline-(--sky-400) ${blessed && s.skimmable ? SKIM_CLASS : ""}`}
                         style={highlight(s.id)}
                       >
                         {s.text}

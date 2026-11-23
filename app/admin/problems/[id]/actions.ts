@@ -194,3 +194,32 @@ export async function deleteProblem(
   revalidatePath("/compare");
   return { ok: true };
 }
+
+const blessingSchema = z.object({
+  problemId: z.uuid(),
+  enabled: z.boolean(),
+  skimmableIds: z.array(z.uuid()).max(1000),
+});
+
+/** 加護の設定と流し読みしてよい文を保存する。計測には関わらないので、記録のある問題でも変えられる */
+export async function saveBlessing(
+  input: z.input<typeof blessingSchema>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireTeacher();
+  const parsed = blessingSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力が不正です。" };
+  const { problemId, enabled, skimmableIds } = parsed.data;
+
+  const { error } = await db().rpc("save_blessing", {
+    p_problem_id: problemId,
+    p_enabled: enabled,
+    p_skimmable_ids: skimmableIds,
+  });
+  if (error) {
+    console.error("save_blessing failed", error);
+    return { ok: false, error: "保存できませんでした。" };
+  }
+  revalidatePath("/");
+  revalidatePath(`/admin/problems/${problemId}/blessing`);
+  return { ok: true };
+}

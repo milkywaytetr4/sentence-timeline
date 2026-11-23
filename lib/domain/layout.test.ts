@@ -16,6 +16,7 @@ const row = (
   label,
   text: id,
   wordCount: 1,
+  skimmable: false,
 });
 
 describe("layoutProblem", () => {
